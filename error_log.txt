@@ -1,0 +1,2 @@
+[26-Nov-2025 07:27:13 Europe/Madrid] PHP Warning:  require_once(/home2/juegosd2/public_html/alcohol.rocotodigital.com/config.php): failed to open stream: No such file or directory in /home2/juegosd2/public_html/alcohol.rocotodigital.com/index.php on line 25
+[26-Nov-2025 07:27:13 Europe/Madrid] PHP Fatal error:  require_once(): Failed opening required '/home2/juegosd2/public_html/alcohol.rocotodigital.com/config.php' (include_path='.:/opt/alt/php73/usr/share/pear') in /home2/juegosd2/public_html/alcohol.rocotodigital.com/index.php on line 25

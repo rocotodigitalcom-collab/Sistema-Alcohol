@@ -77,6 +77,8 @@ if (!isset($breadcrumbs)) {
 	<link rel="stylesheet" href="<?php echo BASE_URL; ?>/assets/css/simple-style.css">
     <link rel="stylesheet" href="<?php echo BASE_URL; ?>/assets/css/responsive.css">
 	<link rel="stylesheet" href="<?php echo BASE_URL; ?>/assets/css/dashboard-enhancements.css">
+	<link rel="stylesheet" href="<?php echo BASE_URL; ?>/assets/css/inventario-ui.css">
+
     
     <!-- Icons -->
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">

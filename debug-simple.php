@@ -1,62 +1,41 @@
 <?php
-// debug-simple.php - SIN INCLUDES, SOLO PHP PURO
-header('Content-Type: text/plain; charset=utf-8');
+// debug-simple.php
+require_once __DIR__ . '/config.php';
+require_once __DIR__ . '/includes/Database.php';
 
-echo "🔧 DIAGNÓSTICO INICIADO\n";
-echo "=======================\n";
-
-// Verificar archivos
-$archivos = [
-    'config.php' => __DIR__ . '/config.php',
-    'Database.php' => __DIR__ . '/includes/Database.php', 
-    'header.php' => __DIR__ . '/includes/header.php',
-    'footer.php' => __DIR__ . '/includes/footer.php'
-];
-
-foreach ($archivos as $nombre => $ruta) {
-    if (file_exists($ruta)) {
-        echo "✅ $nombre - EXISTE\n";
-        
-        // Verificar si el archivo es legible
-        if (is_readable($ruta)) {
-            echo "   📖 Legible\n";
-        } else {
-            echo "   ❌ NO legible (problema de permisos)\n";
-        }
-        
-        // Verificar tamaño
-        echo "   📊 Tamaño: " . filesize($ruta) . " bytes\n";
-        
-    } else {
-        echo "❌ $nombre - NO EXISTE\n";
-    }
-    echo "---\n";
+if (session_status() === PHP_SESSION_NONE) {
+    session_start();
 }
 
-// Verificar sesión
-echo "🔐 INFORMACIÓN DE SESIÓN:\n";
-echo "Estado sesión: " . session_status() . "\n";
-if (isset($_SESSION)) {
-    foreach ($_SESSION as $key => $value) {
-        echo "SESSION['$key'] = $value\n";
-    }
-} else {
-    echo "No hay sesión activa\n";
-}
+$db = new Database();
+$cliente_id = $_SESSION['cliente_id'] ?? 0;
 
-echo "=======================\n";
-echo "🎯 VERIFICACIÓN DE ERRORES PHP:\n";
+echo "<h1>DEBUG ULTRA SIMPLE</h1>";
+echo "<pre>";
 
-// Forzar algunos errores para ver si se muestran
-$undefined_variable = $variable_inexistente; // Esto debería generar warning
+echo "=== SESIÓN ===\n";
+echo "cliente_id: {$cliente_id}\n\n";
 
-echo "✅ Si ves este mensaje, PHP está funcionando básicamente\n";
+echo "=== QUERY SIN FILTRO ===\n";
+$sql1 = "SELECT * FROM inventario_tomas";
+$result1 = $db->fetchAll($sql1);
+echo "Registros encontrados: " . count($result1) . "\n";
+print_r($result1);
 
-// Probar sintaxis compleja
-try {
-    $test_array = ['a' => 1, 'b' => 2];
-    echo "✅ Arrays funcionan\n";
-} catch (Exception $e) {
-    echo "❌ Error en arrays: " . $e->getMessage() . "\n";
-}
+echo "\n=== QUERY CON FILTRO cliente_id={$cliente_id} ===\n";
+$sql2 = "SELECT * FROM inventario_tomas WHERE cliente_id = ?";
+$result2 = $db->fetchAll($sql2, [$cliente_id]);
+echo "Registros encontrados: " . count($result2) . "\n";
+print_r($result2);
+
+echo "\n=== QUERY CON LEFT JOIN ===\n";
+$sql3 = "SELECT t.*, u.nombre_completo 
+         FROM inventario_tomas t
+         LEFT JOIN usuarios u ON t.responsable_id = u.id
+         WHERE t.cliente_id = ?";
+$result3 = $db->fetchAll($sql3, [$cliente_id]);
+echo "Registros encontrados: " . count($result3) . "\n";
+print_r($result3);
+
+echo "</pre>";
 ?>

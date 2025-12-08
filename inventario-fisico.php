@@ -295,7 +295,7 @@ if ($view === 'listado' || $view === 'historial') {
     $solo_cerradas = ($view === 'historial');
 
     $sql = "
-        SELECT t.*, u.nombre AS responsable_nombre
+        SELECT t*, u.nombre AS responsable_nombre
         FROM inventario_tomas t
         LEFT JOIN usuarios u ON u.id = t.responsable_id
         WHERE t.cliente_id = ?
@@ -359,6 +359,141 @@ $breadcrumbs = [
 require_once __DIR__ . '/includes/header-logistica.php';
 ?>
 
+<!-- ====== ESTILOS PREMIUM SOLO PARA ESTE MÓDULO ====== -->
+<style>
+    /* Cards más modernas */
+    .app-content .card {
+        border-radius: 14px;
+        border: 1px solid #e5e7eb;
+        box-shadow: 0 4px 12px rgba(15,23,42,0.06);
+        overflow: hidden;
+    }
+    .app-content .card-header {
+        background: #f9fafb;
+        border-bottom: 1px solid #e5e7eb;
+        font-weight: 600;
+        font-size: 0.95rem;
+    }
+
+    /* Botones superiores (Tomas / Nueva / Historial) */
+    .inventario-tabs .btn {
+        border-radius: 999px;
+        font-size: 0.82rem;
+        font-weight: 500;
+        padding: 0.35rem 0.9rem;
+    }
+    .inventario-tabs .btn-primary {
+        background: #84061f;
+        border-color: #84061f;
+    }
+    .inventario-tabs .btn-primary:hover {
+        background: #6b0419;
+        border-color: #6b0419;
+    }
+    .inventario-tabs .btn-outline-primary {
+        color: #84061f;
+        border-color: #e5e7eb;
+        background: #ffffff;
+    }
+    .inventario-tabs .btn-outline-primary:hover {
+        background: #fdf2f4;
+        border-color: #84061f;
+        color: #84061f;
+    }
+    .inventario-tabs .btn-success {
+        background: #16a34a;
+        border-color: #16a34a;
+    }
+    .inventario-tabs .btn-outline-success {
+        color: #16a34a;
+        border-color: #e5e7eb;
+        background: #ffffff;
+    }
+    .inventario-tabs .btn-outline-success:hover {
+        background: #ecfdf3;
+        border-color: #16a34a;
+        color: #166534;
+    }
+    .inventario-tabs .btn-secondary {
+        background: #4b5563;
+        border-color: #4b5563;
+    }
+    .inventario-tabs .btn-outline-secondary {
+        color: #4b5563;
+        border-color: #e5e7eb;
+        background: #ffffff;
+    }
+    .inventario-tabs .btn-outline-secondary:hover {
+        background: #f3f4f6;
+        border-color: #4b5563;
+        color: #111827;
+    }
+
+    /* Tabs internos (Resumen / Ítems / Diferencias) */
+    .inventario-interno-tabs {
+        border-bottom: 1px solid #e5e7eb;
+    }
+    .inventario-interno-tabs .nav-link {
+        border: none;
+        border-radius: 0;
+        margin-right: 18px;
+        padding: 0.4rem 0;
+        font-size: 0.9rem;
+        font-weight: 500;
+        color: #6b7280;
+        position: relative;
+        background: transparent;
+    }
+    .inventario-interno-tabs .nav-link::after {
+        content: "";
+        position: absolute;
+        left: 0;
+        bottom: -1px;
+        width: 0;
+        height: 2px;
+        background: #84061f;
+        transition: width 0.2s ease;
+    }
+    .inventario-interno-tabs .nav-link:hover {
+        color: #374151;
+    }
+    .inventario-interno-tabs .nav-link.active {
+        color: #111827;
+        font-weight: 600;
+    }
+    .inventario-interno-tabs .nav-link.active::after {
+        width: 100%;
+    }
+
+    /* Badges estado */
+    .badge.bg-success {
+        background-color: #16a34a !important;
+    }
+    .badge.bg-dark {
+        background-color: #4b5563 !important;
+    }
+
+    /* Tabla más limpia */
+    .app-content table.table thead th {
+        font-size: 0.78rem;
+        text-transform: uppercase;
+        letter-spacing: 0.03em;
+        color: #6b7280;
+        border-bottom: 1px solid #e5e7eb;
+    }
+    .app-content table.table tbody td {
+        font-size: 0.85rem;
+        vertical-align: middle;
+    }
+
+    /* Pequeños ajustes botones acciones ítems */
+    .app-content .btn.btn-sm {
+        font-size: 0.78rem;
+        border-radius: 999px;
+        padding-inline: 0.8rem;
+    }
+</style>
+
 <div class="app-content">
     <div class="container-fluid">
 
@@ -386,7 +521,7 @@ require_once __DIR__ . '/includes/header-logistica.php';
                     $tab_main = 'listado';
                 }
                 ?>
-                <div class="mb-3">
+                <div class="mb-3 inventario-tabs">
                     <div class="btn-group" role="group" aria-label="Tabs inventario">
                         <a href="inventario-fisico.php?view=listado"
                            class="btn btn-sm <?php echo $tab_main === 'listado' ? 'btn-primary' : 'btn-outline-primary'; ?>">
@@ -695,7 +830,7 @@ require_once __DIR__ . '/includes/header-logistica.php';
                     </div>
 
                     <!-- Tabs internos -->
-                    <ul class="nav nav-tabs mb-3">
+                    <ul class="nav nav-tabs inventario-interno-tabs mb-3">
                         <li class="nav-item">
                             <a class="nav-link <?= $tab === 'resumen' ? 'active' : ''; ?>"
                                href="inventario-fisico.php?view=detalle&toma_id=<?= (int)$toma_actual['id']; ?>&tab=resumen">

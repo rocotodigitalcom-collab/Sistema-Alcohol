@@ -12,6 +12,15 @@ $user_id    = $_SESSION['user_id']     ?? 0;
 $cliente_id = $_SESSION['cliente_id']  ?? 0;
 $rol        = $_SESSION['rol']         ?? '';
 
+// Si no hay rol en sesión, lo obtenemos desde la BD
+if ($user_id && !$rol) {
+    $row = $db->fetchOne("SELECT rol FROM usuarios WHERE id = ?", [$user_id]);
+    if ($row && !empty($row['rol'])) {
+        $rol = $row['rol'];
+        $_SESSION['rol'] = $rol; // opcional, para siguientes peticiones
+    }
+}
+
 if (!$user_id) {
     header('Location: login.php');
     exit;
@@ -368,9 +377,8 @@ require_once __DIR__ . '/includes/header-logistica.php';
                     </div>
                 </div>
 
-                <!-- TABS PRINCIPALES (ESTILO 4 CON ICONOS) -->
                 <?php
-                // Para marcar activo: detalle y mis_tomas pertenecen al tab "Tomas"
+                // Tabs principales (Tomas / Nueva / Historial)
                 $tab_main = 'listado';
                 if ($view === 'nueva')      $tab_main = 'nueva';
                 if ($view === 'historial')  $tab_main = 'historial';
@@ -415,7 +423,7 @@ require_once __DIR__ . '/includes/header-logistica.php';
 
                 <?php
                 // =========================================
-                // VISTA: LISTADO DE TOMAS
+                // VISTA: LISTADO (tomas o mis tomas)
                 // =========================================
                 if ($view === 'listado' || $view === 'mis_tomas'): ?>
 
@@ -499,7 +507,7 @@ require_once __DIR__ . '/includes/header-logistica.php';
 
                 <?php
                 // =========================================
-                // VISTA: HISTORIAL (TOMAS CERRADAS)
+                // VISTA: HISTORIAL (tomas cerradas)
                 // =========================================
                 elseif ($view === 'historial'): ?>
 
@@ -603,12 +611,12 @@ require_once __DIR__ . '/includes/header-logistica.php';
 
                 <?php
                 // =========================================
-                // VISTA: DETALLE DE TOMA (con tabs internos)
+                // VISTA: DETALLE DE TOMA
                 // =========================================
                 elseif ($view === 'detalle' && $toma_actual): ?>
 
                     <?php
-                    // Stats básicos para pestaña "Diferencias / Avance"
+                    // Stats para pestañas internas
                     $total_items  = count($detalles);
                     $con_conteo   = 0;
                     $sin_conteo   = 0;
@@ -624,7 +632,6 @@ require_once __DIR__ . '/includes/header-logistica.php';
                     $avance = $total_items > 0 ? round($con_conteo * 100 / $total_items, 2) : 0;
                     ?>
 
-                    <!-- Tarjeta principal con info de la toma -->
                     <div class="card mb-3">
                         <div class="card-header d-flex justify-content-between align-items-center">
                             <div>
@@ -687,7 +694,7 @@ require_once __DIR__ . '/includes/header-logistica.php';
                         </div>
                     </div>
 
-                    <!-- Tabs internos: Resumen / Ítems / Diferencias -->
+                    <!-- Tabs internos -->
                     <ul class="nav nav-tabs mb-3">
                         <li class="nav-item">
                             <a class="nav-link <?= $tab === 'resumen' ? 'active' : ''; ?>"
@@ -711,7 +718,6 @@ require_once __DIR__ . '/includes/header-logistica.php';
 
                     <?php if ($tab === 'resumen'): ?>
 
-                        <!-- RESUMEN GENERAL -->
                         <div class="card">
                             <div class="card-header">
                                 <strong>Resumen de la toma</strong>
@@ -756,15 +762,15 @@ require_once __DIR__ . '/includes/header-logistica.php';
                                 <?php endif; ?>
 
                                 <div class="mt-3 text-muted small">
-                                    * Las diferencias contra el sistema (faltantes/sobrantes reales) requieren integrar stock teórico
-                                    en otra tabla (Kardex o stock). De momento se muestra el avance de conteo sobre los ítems listados.
+                                    * Para diferencias reales contra stock de sistema se debe integrar este módulo
+                                    con la tabla de stock teórico o Kardex. Aquí se muestra el avance de conteo
+                                    sobre los ítems registrados.
                                 </div>
                             </div>
                         </div>
 
                     <?php elseif ($tab === 'items'): ?>
 
-                        <!-- FORMULARIO AGREGAR ÍTEM + LISTA DE ÍTEMS -->
                         <?php if ($toma_actual['estado'] === 'abierta'): ?>
                             <div class="card mb-3">
                                 <div class="card-header">
@@ -938,7 +944,6 @@ require_once __DIR__ . '/includes/header-logistica.php';
 
                     <?php elseif ($tab === 'diferencias'): ?>
 
-                        <!-- PESTAÑA DE DIFERENCIAS / AVANCE -->
                         <div class="card mb-3">
                             <div class="card-header">
                                 <strong>Diferencias / Avance de la toma</strong>

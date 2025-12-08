@@ -5,1525 +5,1460 @@ require_once __DIR__ . '/includes/Database.php';
 
 $page_title = 'Toma de Inventario Físico';
 $breadcrumbs = [
-    'dashboard-logistico.php' => 'Dashboard Logístico',
+    'index.php' => 'Dashboard Logístico',
     'inventario-fisico.php' => 'Toma de Inventario Físico'
 ];
 
 require_once __DIR__ . '/includes/header.php';
 
-$db = new Database();
-$user_id = $_SESSION['user_id'] ?? 0;
-$cliente_id = $_SESSION['cliente_id'] ?? 0;
-$rol = $_SESSION['rol'] ?? '';
+$db         = new Database();
+$user_id    = $_SESSION['user_id']     ?? 0;
+$cliente_id = $_SESSION['cliente_id']  ?? 0;
+$rol        = $_SESSION['rol']         ?? '';
 
 // Obtener información del usuario actual
 $usuario_actual = $db->fetchOne("
-    SELECT u.*, c.nombre_empresa 
+    SELECT u.*, c.nombre_empresa
     FROM usuarios u
     LEFT JOIN clientes c ON u.cliente_id = c.id
     WHERE u.id = ?
 ", [$user_id]);
 
 // Determinar la vista según el rol y parámetros
-$view = $_GET['view'] ?? '';
-$toma_id = $_GET['toma_id'] ?? 0;
-$action_form = $_GET['action_form'] ?? ''; // Para mostrar formularios específicos
-$detalle_id_form = $_GET['detalle_id'] ?? 0; // Para formularios específicos
+$view            = $_GET['view']        ?? '';
+$toma_id         = intval($_GET['toma_id'] ?? 0);
+$action_form     = $_GET['action_form'] ?? ''; // Para mostrar formularios específicos (conteo, reconteo, etc.)
+$detalle_id_form = intval($_GET['detalle_id'] ?? 0);
 
 // Si es empleado (conductor u operador) y no se especifica vista, mostrar asignaciones
-if (in_array($rol, ['operador', 'conductor']) && $view == '') {
+if (in_array($rol, ['operador', 'conductor']) && $view === '') {
     $view = 'asignaciones';
 }
 
 // Si es supervisor o admin, por defecto mostrar el listado de tomas
-if (in_array($rol, ['supervisor', 'admin', 'super_admin']) && $view == '') {
+if (in_array($rol, ['supervisor', 'admin', 'super_admin']) && $view === '') {
     $view = 'listado_tomas';
 }
 
 // Procesar acciones POST
-if ($_SERVER['REQUEST_METHOD'] == 'POST') {
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $action = $_POST['action'] ?? '';
-    
+
     switch ($action) {
         case 'crear_toma':
             // Validar y crear nueva toma
-            $almacen_id = intval($_POST['almacen_id']);
-            $responsable_id = intval($_POST['responsable_id']);
-            $fecha_planificada = $_POST['fecha_planificada'];
-            $hora_inicio = $_POST['hora_inicio_planificada'];
-            $hora_fin = $_POST['hora_fin_planificada'];
+            $almacen_id          = intval($_POST['almacen_id'] ?? 0);
+            $responsable_id      = intval($_POST['responsable_id'] ?? 0);
+            $fecha_planificada   = $_POST['fecha_planificada']        ?? '';
+            $hora_inicio         = $_POST['hora_inicio_planificada']  ?? '';
+            $hora_fin            = $_POST['hora_fin_planificada']     ?? '';
             $productos_seleccionados = $_POST['productos'] ?? [];
-            
+            $nombre_toma         = trim($_POST['nombre_toma'] ?? '');
+
+            if ($almacen_id <= 0 || $responsable_id <= 0 || $fecha_planificada === '' || $nombre_toma === '' || empty($productos_seleccionados)) {
+                $_SESSION['error_message'] = "Faltan datos obligatorios para crear la toma de inventario.";
+                header("Location: inventario-fisico.php?view=nueva_toma");
+                exit;
+            }
+
             // Generar código único
             $codigo_toma = 'INV-' . date('Ymd') . '-' . rand(100, 999);
-            
+
             // Insertar toma
             $db->execute("
-                INSERT INTO tomas_inventario 
-                (cliente_id, almacen_id, codigo_toma, nombre, estado, responsable_id, supervisor_id, 
-                 fecha_planificada, hora_inicio_planificada, hora_fin_planificada, total_productos)
-                VALUES (?, ?, ?, ?, 'planificada', ?, ?, ?, ?, ?, ?)
+                INSERT INTO tomas_inventario (
+                    cliente_id,
+                    almacen_id,
+                    codigo_toma,
+                    nombre,
+                    estado,
+                    responsable_id,
+                    supervisor_id,
+                    fecha_planificada,
+                    hora_inicio_planificada,
+                    hora_fin_planificada,
+                    total_productos,
+                    productos_contados,
+                    productos_pendientes,
+                    productos_discrepancia
+                ) VALUES (
+                    ?, ?, ?, ?, 'planificada', ?, ?, ?, ?, ?, ?, 0, ?, 0
+                )
             ", [
-                $cliente_id, $almacen_id, $codigo_toma, $_POST['nombre_toma'], 
-                $responsable_id, $user_id, $fecha_planificada, $hora_inicio, $hora_fin,
+                $cliente_id,
+                $almacen_id,
+                $codigo_toma,
+                $nombre_toma,
+                $responsable_id,
+                $user_id,
+                $fecha_planificada,
+                $hora_inicio,
+                $hora_fin,
+                count($productos_seleccionados),
                 count($productos_seleccionados)
             ]);
-            
+
             $toma_id = $db->lastInsertId();
-            
+
             // Insertar detalles
             foreach ($productos_seleccionados as $producto_id) {
-                $producto = $db->fetchOne("SELECT stock_actual FROM productos_inventario WHERE id = ?", [$producto_id]);
+                $producto = $db->fetchOne("
+                    SELECT stock_actual
+                    FROM productos_inventario
+                    WHERE id = ? AND cliente_id = ?
+                ", [$producto_id, $cliente_id]);
+
+                $stock_actual = $producto['stock_actual'] ?? 0;
+
                 $db->execute("
-                    INSERT INTO detalle_toma_inventario (toma_id, producto_id, cantidad_sistema)
-                    VALUES (?, ?, ?)
-                ", [$toma_id, $producto_id, $producto['stock_actual']]);
+                    INSERT INTO detalle_toma_inventario (
+                        toma_id,
+                        producto_id,
+                        cantidad_sistema,
+                        estado,
+                        diferencia,
+                        intentos_conteo
+                    ) VALUES (
+                        ?, ?, ?, 'pendiente', 0, 0
+                    )
+                ", [$toma_id, $producto_id, $stock_actual]);
             }
-            
-            // Notificar al empleado
+
+            // Notificar al empleado responsable
             $db->execute("
-                INSERT INTO notificaciones_inventario (cliente_id, usuario_id, tipo, mensaje)
-                VALUES (?, ?, 'asignacion', ?)
-            ", [$cliente_id, $responsable_id, "Se te ha asignado una nueva toma de inventario: $codigo_toma"]);
-            
-            $_SESSION['success_message'] = "Toma de inventario creada exitosamente";
-            header("Location: inventario-fisico.php?view=detalle_toma&toma_id=$toma_id");
+                INSERT INTO notificaciones_inventario (
+                    cliente_id,
+                    usuario_id,
+                    tipo,
+                    mensaje
+                ) VALUES (?, ?, 'asignacion', ?)
+            ", [
+                $cliente_id,
+                $responsable_id,
+                "Se te ha asignado una nueva toma de inventario: $codigo_toma"
+            ]);
+
+            $_SESSION['success_message'] = "Toma de inventario creada exitosamente.";
+            header("Location: inventario-fisico.php?view=detalle_toma&toma_id={$toma_id}");
             exit;
-            break;
-            
+
         case 'iniciar_toma':
-            $toma_id = intval($_POST['toma_id']);
-            $db->execute("
-                UPDATE tomas_inventario 
-                SET estado = 'en_proceso', fecha_inicio_real = NOW()
-                WHERE id = ? AND cliente_id = ?
-            ", [$toma_id, $cliente_id]);
-            $_SESSION['success_message'] = "Toma de inventario iniciada";
-            header("Location: inventario-fisico.php?view=detalle_toma&toma_id=$toma_id");
+            $toma_id = intval($_POST['toma_id'] ?? 0);
+
+            if ($toma_id > 0) {
+                $db->execute("
+                    UPDATE tomas_inventario
+                    SET estado = 'en_proceso',
+                        fecha_inicio_real = NOW()
+                    WHERE id = ? AND cliente_id = ?
+                ", [$toma_id, $cliente_id]);
+
+                $_SESSION['success_message'] = "Toma de inventario iniciada.";
+            }
+
+            header("Location: inventario-fisico.php?view=detalle_toma&toma_id={$toma_id}");
             exit;
-            break;
-            
+
         case 'registrar_conteo':
-            $detalle_id = intval($_POST['detalle_id']);
-            $cantidad_contada = floatval($_POST['cantidad_contada']);
-            $observaciones = $_POST['observaciones'] ?? '';
-            
+            $detalle_id       = intval($_POST['detalle_id'] ?? 0);
+            $cantidad_contada = floatval($_POST['cantidad_contada'] ?? 0);
+            $observaciones    = $_POST['observaciones'] ?? '';
+
             // Obtener detalle actual
             $detalle = $db->fetchOne("
-                SELECT d.*, p.nombre as producto_nombre, t.responsable_id, t.estado as toma_estado
+                SELECT d.*, p.nombre AS producto_nombre, t.responsable_id, t.estado AS toma_estado, t.id AS toma_id
                 FROM detalle_toma_inventario d
                 JOIN productos_inventario p ON d.producto_id = p.id
                 JOIN tomas_inventario t ON d.toma_id = t.id
                 WHERE d.id = ? AND t.cliente_id = ?
             ", [$detalle_id, $cliente_id]);
-            
-            if ($detalle && $detalle['toma_estado'] == 'en_proceso') {
-                $diferencia = $cantidad_contada - $detalle['cantidad_sistema'];
-                $estado = ($diferencia == 0) ? 'verificado' : 'discrepancia';
-                
+
+            if ($detalle && in_array($detalle['toma_estado'], ['en_proceso', 'planificada'])) {
+                $diferencia = $cantidad_contada - floatval($detalle['cantidad_sistema']);
+                $estado     = ($diferencia == 0) ? 'verificado' : 'discrepancia';
+
                 $db->execute("
-                    UPDATE detalle_toma_inventario 
-                    SET cantidad_contada = ?, diferencia = ?, estado = ?, 
-                        observaciones = ?, fecha_conteo = NOW(), intentos_conteo = intentos_conteo + 1
+                    UPDATE detalle_toma_inventario
+                    SET cantidad_contada = ?,
+                        diferencia       = ?,
+                        estado           = ?,
+                        observaciones    = ?,
+                        fecha_conteo     = NOW(),
+                        intentos_conteo  = intentos_conteo + 1
                     WHERE id = ?
-                ", [$cantidad_contada, $diferencia, $estado, $observaciones, $detalle_id]);
-                
+                ", [
+                    $cantidad_contada,
+                    $diferencia,
+                    $estado,
+                    $observaciones,
+                    $detalle_id
+                ]);
+
                 // Actualizar contadores de la toma
                 $db->execute("
-                    UPDATE tomas_inventario 
+                    UPDATE tomas_inventario
                     SET productos_contados = (
-                        SELECT COUNT(*) FROM detalle_toma_inventario 
-                        WHERE toma_id = ? AND estado IN ('contado', 'verificado', 'discrepancia')
-                    ),
-                    productos_pendientes = (
-                        SELECT COUNT(*) FROM detalle_toma_inventario 
-                        WHERE toma_id = ? AND estado = 'pendiente'
-                    ),
-                    productos_discrepancia = (
-                        SELECT COUNT(*) FROM detalle_toma_inventario 
-                        WHERE toma_id = ? AND estado = 'discrepancia'
-                    )
+                            SELECT COUNT(*)
+                            FROM detalle_toma_inventario
+                            WHERE toma_id = ? AND estado IN ('pendiente', 'contado', 'verificado', 'discrepancia', 'no_encontrado')
+                        ),
+                        productos_pendientes = (
+                            SELECT COUNT(*)
+                            FROM detalle_toma_inventario
+                            WHERE toma_id = ? AND estado = 'pendiente'
+                        ),
+                        productos_discrepancia = (
+                            SELECT COUNT(*)
+                            FROM detalle_toma_inventario
+                            WHERE toma_id = ? AND estado = 'discrepancia'
+                        )
                     WHERE id = ?
-                ", [$detalle['toma_id'], $detalle['toma_id'], $detalle['toma_id'], $detalle['toma_id']]);
-                
+                ", [
+                    $detalle['toma_id'],
+                    $detalle['toma_id'],
+                    $detalle['toma_id'],
+                    $detalle['toma_id']
+                ]);
+
                 // Si hay discrepancia, notificar al supervisor
                 if ($diferencia != 0) {
-                    $db->execute("
-                        INSERT INTO notificaciones_inventario (cliente_id, usuario_id, tipo, mensaje)
-                        VALUES (?, ?, 'discrepancia', ?)
-                    ", [$cliente_id, $detalle['responsable_id'], 
-                        "Discrepancia en {$detalle['producto_nombre']}: Sistema: {$detalle['cantidad_sistema']}, Contado: $cantidad_contada"]);
-                }
-                
-                $_SESSION['success_message'] = "Conteo registrado exitosamente";
-                header("Location: inventario-fisico.php?view=detalle_toma&toma_id=" . $detalle['toma_id']);
-                exit;
-            }
-            break;
-            
-        case 'marcar_no_encontrado':
-            $detalle_id = intval($_POST['detalle_id']);
-            $motivo = $_POST['motivo_no_encontrado'] ?? '';
-            
-            $db->execute("
-                UPDATE detalle_toma_inventario 
-                SET estado = 'no_encontrado', observaciones = ?, fecha_conteo = NOW()
-                WHERE id = ?
-            ", [$motivo, $detalle_id]);
-            
-            $_SESSION['success_message'] = "Producto marcado como no encontrado";
-            header("Location: inventario-fisico.php?view=detalle_toma&toma_id=" . $_POST['toma_id']);
-            exit;
-            break;
-            
-        case 'solicitar_reconteo':
-            $detalle_id = intval($_POST['detalle_id']);
-            $motivo = $_POST['motivo_reconteo'] ?? '';
-            
-            $db->execute("
-                UPDATE detalle_toma_inventario 
-                SET necesita_reconteo = TRUE, motivo_reconteo = ?, estado = 'pendiente', intentos_conteo = 0
-                WHERE id = ?
-            ", [$motivo, $detalle_id]);
-            
-            // Notificar al empleado
-            $detalle = $db->fetchOne("
-                SELECT d.*, t.responsable_id, p.nombre as producto_nombre
-                FROM detalle_toma_inventario d
-                JOIN tomas_inventario t ON d.toma_id = t.id
-                JOIN productos_inventario p ON d.producto_id = p.id
-                WHERE d.id = ?
-            ", [$detalle_id]);
-            
-            $db->execute("
-                INSERT INTO notificaciones_inventario (cliente_id, usuario_id, tipo, mensaje)
-                VALUES (?, ?, 'reconteo', ?)
-            ", [$cliente_id, $detalle['responsable_id'], 
-                "Se solicita reconteo de {$detalle['producto_nombre']}. Motivo: $motivo"]);
-                
-            $_SESSION['success_message'] = "Reconteo solicitado";
-            header("Location: inventario-fisico.php?view=detalle_toma&toma_id=" . $detalle['toma_id']);
-            exit;
-            break;
-            
-        case 'aprobar_conteo':
-            $detalle_id = intval($_POST['detalle_id']);
-            
-            $db->execute("
-                UPDATE detalle_toma_inventario 
-                SET estado = 'verificado', fecha_verificacion = NOW()
-                WHERE id = ?
-            ", [$detalle_id]);
-            
-            $_SESSION['success_message'] = "Conteo aprobado";
-            header("Location: inventario-fisico.php?view=detalle_toma&toma_id=" . $_POST['toma_id']);
-            exit;
-            break;
-            
-        case 'ajustar_inventario':
-            $toma_id = intval($_POST['toma_id']);
-            $ajustar = $_POST['ajustar'] ?? [];
-            
-            foreach ($ajustar as $detalle_id) {
-                $detalle = $db->fetchOne("SELECT * FROM detalle_toma_inventario WHERE id = ?", [$detalle_id]);
-                if ($detalle && $detalle['cantidad_contada'] !== null) {
-                    // Actualizar stock del producto
-                    $db->execute("
-                        UPDATE productos_inventario 
-                        SET stock_actual = ?
-                        WHERE id = ?
-                    ", [$detalle['cantidad_contada'], $detalle['producto_id']]);
-                    
-                    // Registrar en kardex (ajuste por toma física)
-                    $db->execute("
-                        INSERT INTO kardex_inventario 
-                        (cliente_id, producto_id, tipo_movimiento, cantidad, cantidad_anterior, cantidad_nueva, 
-                         referencia_id, motivo, usuario_id)
-                        VALUES (?, ?, 'ajuste_inventario', ?, ?, ?, ?, ?, ?)
-                    ", [
-                        $cliente_id, $detalle['producto_id'], 
-                        $detalle['diferencia'],
+                    $mensaje_discrepancia = sprintf(
+                        "Discrepancia en %s: Sistema: %s, Contado: %s",
+                        $detalle['producto_nombre'],
                         $detalle['cantidad_sistema'],
-                        $detalle['cantidad_contada'],
-                        $toma_id,
-                        'Ajuste por toma física de inventario',
-                        $user_id
-                    ]);
-                    
-                    // Marcar como verificado
+                        $cantidad_contada
+                    );
+
+                    // Notificación al supervisor (usuario actual se asume supervisor)
                     $db->execute("
-                        UPDATE detalle_toma_inventario 
-                        SET estado = 'verificado', fecha_verificacion = NOW()
+                        INSERT INTO notificaciones_inventario (
+                            cliente_id,
+                            usuario_id,
+                            tipo,
+                            mensaje
+                        ) VALUES (?, ?, 'discrepancia', ?)
+                    ", [
+                        $cliente_id,
+                        $detalle['responsable_id'],
+                        $mensaje_discrepancia
+                    ]);
+                }
+
+                $_SESSION['success_message'] = "Conteo registrado exitosamente.";
+            }
+
+            header("Location: inventario-fisico.php?view=detalle_toma&toma_id={$detalle['toma_id']}");
+            exit;
+
+        case 'marcar_no_encontrado':
+            $detalle_id = intval($_POST['detalle_id'] ?? 0);
+            $toma_id    = intval($_POST['toma_id'] ?? 0);
+            $motivo     = $_POST['motivo_no_encontrado'] ?? '';
+
+            if ($detalle_id > 0) {
+                $db->execute("
+                    UPDATE detalle_toma_inventario
+                    SET estado        = 'no_encontrado',
+                        observaciones = ?,
+                        fecha_conteo  = NOW()
+                    WHERE id = ?
+                ", [$motivo, $detalle_id]);
+
+                $_SESSION['success_message'] = "Producto marcado como no encontrado.";
+            }
+
+            header("Location: inventario-fisico.php?view=detalle_toma&toma_id={$toma_id}");
+            exit;
+
+        case 'solicitar_reconteo':
+            $detalle_id = intval($_POST['detalle_id'] ?? 0);
+            $motivo     = $_POST['motivo_reconteo'] ?? '';
+
+            if ($detalle_id > 0) {
+                $db->execute("
+                    UPDATE detalle_toma_inventario
+                    SET necesita_reconteo = TRUE,
+                        motivo_reconteo    = ?,
+                        estado             = 'pendiente',
+                        intentos_conteo    = 0
+                    WHERE id = ?
+                ", [$motivo, $detalle_id]);
+
+                // Notificar al empleado responsable
+                $detalle = $db->fetchOne("
+                    SELECT d.*, t.responsable_id, p.nombre AS producto_nombre, t.id AS toma_id
+                    FROM detalle_toma_inventario d
+                    JOIN tomas_inventario t ON d.toma_id = t.id
+                    JOIN productos_inventario p ON d.producto_id = p.id
+                    WHERE d.id = ?
+                ", [$detalle_id]);
+
+                if ($detalle) {
+                    $mensaje = "Se solicita reconteo de {$detalle['producto_nombre']}. Motivo: {$motivo}";
+
+                    $db->execute("
+                        INSERT INTO notificaciones_inventario (
+                            cliente_id,
+                            usuario_id,
+                            tipo,
+                            mensaje
+                        ) VALUES (?, ?, 'reconteo', ?)
+                    ", [
+                        $cliente_id,
+                        $detalle['responsable_id'],
+                        $mensaje
+                    ]);
+
+                    $_SESSION['success_message'] = "Reconteo solicitado.";
+                    header("Location: inventario-fisico.php?view=detalle_toma&toma_id={$detalle['toma_id']}");
+                    exit;
+                }
+            }
+
+            header("Location: inventario-fisico.php");
+            exit;
+
+        case 'aprobar_conteo':
+            $detalle_id = intval($_POST['detalle_id'] ?? 0);
+            $toma_id    = intval($_POST['toma_id'] ?? 0);
+
+            if ($detalle_id > 0) {
+                $db->execute("
+                    UPDATE detalle_toma_inventario
+                    SET estado            = 'verificado',
+                        fecha_verificacion = NOW()
+                    WHERE id = ?
+                ", [$detalle_id]);
+
+                $_SESSION['success_message'] = "Conteo aprobado.";
+            }
+
+            header("Location: inventario-fisico.php?view=detalle_toma&toma_id={$toma_id}");
+            exit;
+
+        case 'ajustar_inventario':
+            $toma_id = intval($_POST['toma_id'] ?? 0);
+            $ajustar = $_POST['ajustar'] ?? [];
+
+            if ($toma_id > 0 && !empty($ajustar)) {
+                foreach ($ajustar as $detalle_id) {
+                    $detalle_id = intval($detalle_id);
+                    $detalle = $db->fetchOne("
+                        SELECT *
+                        FROM detalle_toma_inventario
                         WHERE id = ?
                     ", [$detalle_id]);
+
+                    if ($detalle && $detalle['cantidad_contada'] !== null) {
+                        // Actualizar stock del producto
+                        $db->execute("
+                            UPDATE productos_inventario
+                            SET stock_actual = ?
+                            WHERE id = ?
+                        ", [
+                            $detalle['cantidad_contada'],
+                            $detalle['producto_id']
+                        ]);
+
+                        // Registrar en kardex (ajuste por toma física)
+                        $db->execute("
+                            INSERT INTO kardex_inventario (
+                                cliente_id,
+                                producto_id,
+                                tipo_movimiento,
+                                cantidad,
+                                cantidad_anterior,
+                                cantidad_nueva,
+                                referencia_id,
+                                motivo,
+                                usuario_id
+                            ) VALUES (
+                                ?, ?, 'ajuste_inventario', ?, ?, ?, ?, ?, ?
+                            )
+                        ", [
+                            $cliente_id,
+                            $detalle['producto_id'],
+                            $detalle['diferencia'],
+                            $detalle['cantidad_sistema'],
+                            $detalle['cantidad_contada'],
+                            $toma_id,
+                            'Ajuste por toma física de inventario',
+                            $user_id
+                        ]);
+
+                        // Marcar como verificado
+                        $db->execute("
+                            UPDATE detalle_toma_inventario
+                            SET estado = 'verificado',
+                                fecha_verificacion = NOW()
+                            WHERE id = ?
+                        ", [$detalle_id]);
+                    }
                 }
+
+                // Marcar toma como ajustada
+                $db->execute("
+                    UPDATE tomas_inventario
+                    SET estado        = 'ajustada',
+                        fecha_fin_real = NOW()
+                    WHERE id = ?
+                ", [$toma_id]);
+
+                $_SESSION['success_message'] = "Inventario ajustado exitosamente.";
             }
-            
-            // Marcar toma como ajustada
-            $db->execute("
-                UPDATE tomas_inventario 
-                SET estado = 'ajustada', fecha_fin_real = NOW()
-                WHERE id = ?
-            ", [$toma_id]);
-            
-            $_SESSION['success_message'] = "Inventario ajustado exitosamente";
-            header("Location: inventario-fisico.php?view=detalle_toma&toma_id=$toma_id");
+
+            header("Location: inventario-fisico.php?view=detalle_toma&toma_id={$toma_id}");
             exit;
-            break;
+
+        case 'exportar_excel':
+            $toma_id = intval($_POST['toma_id'] ?? 0);
+
+            if ($toma_id > 0) {
+                $toma = $db->fetchOne("
+                    SELECT ti.*, a.nombre AS almacen_nombre
+                    FROM tomas_inventario ti
+                    JOIN almacenes_inventario a ON ti.almacen_id = a.id
+                    WHERE ti.id = ? AND ti.cliente_id = ?
+                ", [$toma_id, $cliente_id]);
+
+                $detalles = $db->fetchAll("
+                    SELECT d.*, p.codigo, p.nombre AS producto_nombre, p.ubicacion
+                    FROM detalle_toma_inventario d
+                    JOIN productos_inventario p ON d.producto_id = p.id
+                    WHERE d.toma_id = ?
+                    ORDER BY p.nombre
+                ", [$toma_id]);
+
+                header('Content-Type: application/vnd.ms-excel; charset=utf-8');
+                header('Content-Disposition: attachment; filename="inventario_toma_' . $toma_id . '.xls"');
+
+                echo "Código Toma:\t" . ($toma['codigo_toma'] ?? '') . "\n";
+                echo "Nombre Toma:\t" . ($toma['nombre'] ?? '') . "\n";
+                echo "Almacén:\t" . ($toma['almacen_nombre'] ?? '') . "\n";
+                echo "Estado:\t" . ($toma['estado'] ?? '') . "\n\n";
+
+                echo "Código\tProducto\tUbicación\tCant. Sistema\tCant. Contada\tDiferencia\tEstado\tObservaciones\n";
+
+                foreach ($detalles as $d) {
+                    echo ($d['codigo'] ?? '') . "\t"
+                        . ($d['producto_nombre'] ?? '') . "\t"
+                        . ($d['ubicacion'] ?? '') . "\t"
+                        . ($d['cantidad_sistema'] ?? 0) . "\t"
+                        . ($d['cantidad_contada'] ?? 0) . "\t"
+                        . ($d['diferencia'] ?? 0) . "\t"
+                        . ($d['estado'] ?? '') . "\t"
+                        . str_replace(["\n", "\r"], ' ', $d['observaciones'] ?? '') . "\n";
+                }
+
+                exit;
+            }
+
+            $_SESSION['error_message'] = "No se pudo exportar el inventario.";
+            header("Location: inventario-fisico.php");
+            exit;
     }
 }
 
 // Obtener datos según la vista
 $data = [];
+
 switch ($view) {
     case 'listado_tomas':
+        // Filtros avanzados (estado, almacén, responsable)
+        $estado_filtro      = $_GET['estado']      ?? '';
+        $almacen_filtro     = intval($_GET['almacen_id'] ?? 0);
+        $responsable_filtro = intval($_GET['responsable_id'] ?? 0);
+
+        $where  = "ti.cliente_id = ?";
+        $params = [$cliente_id];
+
+        if ($estado_filtro !== '') {
+            $where  .= " AND ti.estado = ?";
+            $params[] = $estado_filtro;
+        }
+
+        if ($almacen_filtro > 0) {
+            $where  .= " AND ti.almacen_id = ?";
+            $params[] = $almacen_filtro;
+        }
+
+        if ($responsable_filtro > 0) {
+            $where  .= " AND ti.responsable_id = ?";
+            $params[] = $responsable_filtro;
+        }
+
         $data['tomas'] = $db->fetchAll("
-            SELECT ti.*, a.nombre as almacen_nombre, 
-                   u_resp.nombre as responsable_nombre, u_sup.nombre as supervisor_nombre
+            SELECT ti.*, a.nombre AS almacen_nombre,
+                   u_resp.nombre AS responsable_nombre,
+                   u_sup.nombre  AS supervisor_nombre
             FROM tomas_inventario ti
             JOIN almacenes_inventario a ON ti.almacen_id = a.id
             JOIN usuarios u_resp ON ti.responsable_id = u_resp.id
-            JOIN usuarios u_sup ON ti.supervisor_id = u_sup.id
-            WHERE ti.cliente_id = ?
+            JOIN usuarios u_sup  ON ti.supervisor_id  = u_sup.id
+            WHERE {$where}
             ORDER BY ti.fecha_creacion DESC
-            LIMIT 50
+            LIMIT 100
+        ", $params);
+
+        $data['almacenes'] = $db->fetchAll("
+            SELECT id, nombre
+            FROM almacenes_inventario
+            WHERE cliente_id = ? AND estado = 'activo'
+            ORDER BY nombre
         ", [$cliente_id]);
+
+        $data['empleados'] = $db->fetchAll("
+            SELECT id, nombre
+            FROM usuarios
+            WHERE cliente_id = ? AND rol IN ('operador', 'conductor')
+            ORDER BY nombre
+        ", [$cliente_id]);
+
         break;
-        
+
     case 'detalle_toma':
-        $toma_id = intval($_GET['toma_id']);
+        $toma_id = intval($_GET['toma_id'] ?? 0);
+
         $data['toma'] = $db->fetchOne("
-            SELECT ti.*, a.nombre as almacen_nombre, 
-                   u_resp.nombre as responsable_nombre, u_sup.nombre as supervisor_nombre,
-                   u_resp.id as responsable_id
+            SELECT ti.*, a.nombre AS almacen_nombre,
+                   u_resp.nombre AS responsable_nombre,
+                   u_sup.nombre  AS supervisor_nombre,
+                   u_resp.id     AS responsable_id
             FROM tomas_inventario ti
             JOIN almacenes_inventario a ON ti.almacen_id = a.id
             JOIN usuarios u_resp ON ti.responsable_id = u_resp.id
-            JOIN usuarios u_sup ON ti.supervisor_id = u_sup.id
+            JOIN usuarios u_sup  ON ti.supervisor_id  = u_sup.id
             WHERE ti.id = ? AND ti.cliente_id = ?
         ", [$toma_id, $cliente_id]);
-        
+
         $data['detalles'] = $db->fetchAll("
-            SELECT d.*, p.codigo, p.nombre as producto_nombre, p.ubicacion
+            SELECT d.*, p.codigo, p.nombre AS producto_nombre, p.ubicacion
             FROM detalle_toma_inventario d
             JOIN productos_inventario p ON d.producto_id = p.id
             WHERE d.toma_id = ?
             ORDER BY d.estado, p.nombre
         ", [$toma_id]);
-        
-        // Obtener detalle específico para formularios
+
+        // Detalle específico para formularios (conteo, reconteo, etc.)
         if ($detalle_id_form && $action_form) {
             $data['detalle_form'] = $db->fetchOne("
-                SELECT d.*, p.codigo, p.nombre as producto_nombre, p.ubicacion
+                SELECT d.*, p.codigo, p.nombre AS producto_nombre, p.ubicacion
                 FROM detalle_toma_inventario d
                 JOIN productos_inventario p ON d.producto_id = p.id
                 WHERE d.id = ? AND d.toma_id = ?
             ", [$detalle_id_form, $toma_id]);
         }
+
         break;
-        
+
     case 'asignaciones':
         $data['tomas_asignadas'] = $db->fetchAll("
-            SELECT ti.*, a.nombre as almacen_nombre, u_sup.nombre as supervisor_nombre
+            SELECT ti.*, a.nombre AS almacen_nombre,
+                   u_sup.nombre AS supervisor_nombre
             FROM tomas_inventario ti
             JOIN almacenes_inventario a ON ti.almacen_id = a.id
             JOIN usuarios u_sup ON ti.supervisor_id = u_sup.id
-            WHERE ti.responsable_id = ? AND ti.cliente_id = ? AND ti.estado IN ('planificada', 'en_proceso')
+            WHERE ti.responsable_id = ?
+              AND ti.cliente_id    = ?
+              AND ti.estado IN ('planificada', 'en_proceso')
             ORDER BY ti.estado, ti.fecha_planificada DESC
         ", [$user_id, $cliente_id]);
+
         break;
-        
+
     case 'nueva_toma':
         $data['almacenes'] = $db->fetchAll("
-            SELECT * FROM almacenes_inventario 
+            SELECT *
+            FROM almacenes_inventario
             WHERE cliente_id = ? AND estado = 'activo'
+            ORDER BY nombre
         ", [$cliente_id]);
-        
+
         $data['empleados'] = $db->fetchAll("
-            SELECT * FROM usuarios 
+            SELECT *
+            FROM usuarios
             WHERE cliente_id = ? AND rol IN ('operador', 'conductor') AND estado = 1
+            ORDER BY nombre
         ", [$cliente_id]);
+
+        // Productos activos para selección (se filtran por almacén vía JS)
+        $data['productos'] = $db->fetchAll("
+            SELECT p.*, a.nombre AS almacen_nombre
+            FROM productos_inventario p
+            LEFT JOIN almacenes_inventario a ON p.almacen_id = a.id
+            WHERE p.cliente_id = ? AND p.estado = 'activo'
+            ORDER BY a.nombre, p.nombre
+        ", [$cliente_id]);
+
         break;
-        
+
     case 'mis_conteos':
-        $toma_id = intval($_GET['toma_id']);
+        $toma_id = intval($_GET['toma_id'] ?? 0);
+
         $data['detalles_pendientes'] = $db->fetchAll("
-            SELECT d.*, p.codigo, p.nombre as producto_nombre, p.ubicacion,
-                   ti.codigo_toma, a.nombre as almacen_nombre
+            SELECT d.*, p.codigo, p.nombre AS producto_nombre, p.ubicacion,
+                   ti.codigo_toma, a.nombre AS almacen_nombre
             FROM detalle_toma_inventario d
             JOIN productos_inventario p ON d.producto_id = p.id
-            JOIN tomas_inventario ti ON d.toma_id = ti.id
+            JOIN tomas_inventario ti    ON d.toma_id = ti.id
             JOIN almacenes_inventario a ON ti.almacen_id = a.id
-            WHERE ti.responsable_id = ? AND ti.id = ? AND d.estado = 'pendiente'
+            WHERE ti.responsable_id = ?
+              AND ti.id            = ?
+              AND d.estado         = 'pendiente'
             ORDER BY p.nombre
         ", [$user_id, $toma_id]);
+
         break;
 }
+
 ?>
-<!DOCTYPE html>
-<html lang="es">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title><?php echo htmlspecialchars($page_title); ?> - Sistema de Logística</title>
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
-    <style>
-        /* ===== ESTILOS PRINCIPALES ===== */
-        :root {
-            --primary-color: #2c3e50;
-            --secondary-color: #3498db;
-            --success-color: #27ae60;
-            --warning-color: #f39c12;
-            --danger-color: #e74c3c;
-            --light-color: #f8f9fa;
-            --dark-color: #343a40;
-            --gray-light: #ecf0f1;
-            --gray-medium: #bdc3c7;
-            --gray-dark: #7f8c8d;
-            
-            --border-radius: 8px;
-            --box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
-            --transition: all 0.3s ease;
-        }
-        
-        body {
-            background-color: #f5f7fa;
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            color: #333;
-        }
-        
-        .content-body {
-            padding: 20px;
-            max-width: 1400px;
-            margin: 0 auto;
-        }
-        
-        /* Header del Dashboard */
-        .dashboard-header {
-            background: white;
-            border-radius: var(--border-radius);
-            padding: 25px 30px;
-            margin-bottom: 30px;
-            box-shadow: var(--box-shadow);
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            flex-wrap: wrap;
-            gap: 20px;
-        }
-        
-        .welcome-section h1 {
-            color: var(--primary-color);
-            margin: 0 0 5px 0;
-            font-size: 1.8rem;
-        }
-        
-        .dashboard-subtitle {
-            color: var(--gray-dark);
-            margin: 0;
-            font-size: 0.95rem;
-        }
-        
-        .header-actions {
-            display: flex;
-            align-items: center;
-            gap: 15px;
-        }
-        
-        .user-badge {
-            background: var(--primary-color);
-            color: white;
-            padding: 8px 16px;
-            border-radius: 20px;
-            font-size: 0.9rem;
-            display: inline-flex;
-            align-items: center;
-            gap: 8px;
-        }
-        
-        /* Tarjetas */
-        .card {
-            background: white;
-            border-radius: var(--border-radius);
-            box-shadow: var(--box-shadow);
-            margin-bottom: 30px;
-            border: none;
-        }
-        
-        .card-header {
-            background: white;
-            border-bottom: 1px solid var(--gray-light);
-            padding: 20px 30px;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            flex-wrap: wrap;
-            gap: 15px;
-        }
-        
-        .card-header h3 {
-            margin: 0;
-            color: var(--primary-color);
-            font-size: 1.3rem;
-            display: flex;
-            align-items: center;
-            gap: 10px;
-        }
-        
-        .card-actions {
-            display: flex;
-            gap: 10px;
-        }
-        
-        .card-body {
-            padding: 30px;
-        }
-        
-        /* Botones */
-        .btn {
-            display: inline-flex;
-            align-items: center;
-            justify-content: center;
-            gap: 8px;
-            padding: 10px 20px;
-            border: none;
-            border-radius: var(--border-radius);
-            font-weight: 600;
-            cursor: pointer;
-            transition: var(--transition);
-            text-decoration: none;
-        }
-        
-        .btn-primary {
-            background: var(--secondary-color);
-            color: white;
-        }
-        
-        .btn-primary:hover {
-            background: #2980b9;
-            transform: translateY(-2px);
-            box-shadow: 0 4px 8px rgba(52, 152, 219, 0.3);
-        }
-        
-        .btn-success {
-            background: var(--success-color);
-            color: white;
-        }
-        
-        .btn-warning {
-            background: var(--warning-color);
-            color: white;
-        }
-        
-        .btn-danger {
-            background: var(--danger-color);
-            color: white;
-        }
-        
-        .btn-outline {
-            background: transparent;
-            border: 2px solid var(--primary-color);
-            color: var(--primary-color);
-        }
-        
-        .btn-outline:hover {
-            background: var(--primary-color);
-            color: white;
-        }
-        
-        .btn-sm {
-            padding: 6px 12px;
-            font-size: 0.85rem;
-        }
-        
-        /* Tablas */
-        .table {
-            margin-bottom: 0;
-        }
-        
-        .table thead th {
-            background: var(--primary-color);
-            color: white;
-            border: none;
-            font-weight: 600;
-            padding: 15px;
-        }
-        
-        .table tbody tr:hover {
-            background: rgba(52, 152, 219, 0.05);
-        }
-        
-        /* Badges de estado */
-        .status-badge {
-            display: inline-block;
-            padding: 5px 12px;
-            border-radius: 20px;
-            font-size: 0.8rem;
-            font-weight: 600;
-            text-transform: uppercase;
-        }
-        
-        .status-badge.success {
-            background: rgba(39, 174, 96, 0.15);
-            color: var(--success-color);
-        }
-        
-        .status-badge.info {
-            background: rgba(52, 152, 219, 0.15);
-            color: var(--secondary-color);
-        }
-        
-        .status-badge.warning {
-            background: rgba(243, 156, 18, 0.15);
-            color: var(--warning-color);
-        }
-        
-        .status-badge.danger {
-            background: rgba(231, 76, 60, 0.15);
-            color: var(--danger-color);
-        }
-        
-        /* Formularios */
-        .form-label {
-            font-weight: 600;
-            color: var(--primary-color);
-            margin-bottom: 8px;
-        }
-        
-        .form-control {
-            border: 1px solid var(--gray-medium);
-            border-radius: var(--border-radius);
-            padding: 10px 15px;
-            transition: var(--transition);
-        }
-        
-        .form-control:focus {
-            border-color: var(--secondary-color);
-            box-shadow: 0 0 0 3px rgba(52, 152, 219, 0.2);
-        }
-        
-        /* Estadísticas */
-        .stat-card-sm {
-            text-align: center;
-            padding: 20px;
-            background: white;
-            border-radius: var(--border-radius);
-            box-shadow: var(--box-shadow);
-        }
-        
-        .stat-card-sm .stat-number {
-            font-size: 2rem;
-            font-weight: 700;
-            margin-bottom: 5px;
-        }
-        
-        .stat-card-sm .stat-label {
-            color: var(--gray-dark);
-            font-size: 0.9rem;
-        }
-        
-        /* Estado vacío */
-        .empty-state {
-            text-align: center;
-            padding: 60px 20px;
-        }
-        
-        .empty-state i {
-            font-size: 4rem;
-            color: var(--gray-medium);
-            margin-bottom: 20px;
-            opacity: 0.5;
-        }
-        
-        .empty-state h4 {
-            color: var(--gray-dark);
-            margin-bottom: 15px;
-            font-weight: 400;
-        }
-        
-        /* Alertas */
-        .alert {
-            border-radius: var(--border-radius);
-            border: none;
-            padding: 15px 20px;
-            margin-bottom: 20px;
-            display: flex;
-            align-items: flex-start;
-            gap: 12px;
-        }
-        
-        .alert-success {
-            background: rgba(39, 174, 96, 0.15);
-            color: #155724;
-            border-left: 4px solid var(--success-color);
-        }
-        
-        .alert-info {
-            background: rgba(52, 152, 219, 0.15);
-            color: #0c5460;
-            border-left: 4px solid var(--secondary-color);
-        }
-        
-        .alert-warning {
-            background: rgba(243, 156, 18, 0.15);
-            color: #856404;
-            border-left: 4px solid var(--warning-color);
-        }
-        
-        .alert-danger {
-            background: rgba(231, 76, 60, 0.15);
-            color: #721c24;
-            border-left: 4px solid var(--danger-color);
-        }
-        
-        /* Formularios en línea */
-        .inline-form-container {
-            background: white;
-            padding: 20px;
-            border-radius: 8px;
-            margin: 20px 0;
-            border: 1px solid #e0e0e0;
-        }
-        
-        .inline-form-title {
-            color: var(--primary-color);
-            margin-bottom: 20px;
-            padding-bottom: 10px;
-            border-bottom: 2px solid var(--secondary-color);
-        }
-        
-        .form-actions {
-            display: flex;
-            gap: 10px;
-            margin-top: 20px;
-        }
-        
-        /* Responsive */
-        @media (max-width: 768px) {
-            .dashboard-header {
-                flex-direction: column;
-                align-items: flex-start;
-            }
-            
-            .header-actions {
-                width: 100%;
-                justify-content: space-between;
-            }
-            
-            .card-header {
-                flex-direction: column;
-                align-items: flex-start;
-            }
-            
-            .card-body {
-                padding: 20px;
-            }
-            
-            .content-body {
-                padding: 15px;
-            }
-            
-            .form-actions {
-                flex-direction: column;
-            }
-        }
-    </style>
-</head>
-<body>
-    <div class="content-body">
-        <!-- Header del Dashboard -->
-        <div class="dashboard-header">
-            <div class="welcome-section">
-                <h1>Toma de Inventario Físico</h1>
-                <p class="dashboard-subtitle">Control y seguimiento de inventarios - <?php echo date('d/m/Y'); ?></p>
-            </div>
-            <div class="header-actions">
-                <span class="user-badge">
-                    <i class="fas fa-user-circle"></i>
-                    <?php echo htmlspecialchars($usuario_actual['rol'] ?? 'Usuario'); ?>
-                </span>
-                
-                <?php if (in_array($rol, ['supervisor', 'admin', 'super_admin'])): ?>
-                <a href="inventario-fisico.php?view=nueva_toma" class="btn btn-primary">
-                    <i class="fas fa-plus-circle"></i>
-                    Nueva Toma
-                </a>
-                <?php endif; ?>
-                
-                <a href="inventario-fisico.php" class="btn btn-outline">
-                    <i class="fas fa-sync-alt"></i>
-                    Actualizar
-                </a>
-            </div>
-        </div>
 
-        <!-- Mensajes de éxito/error -->
-        <?php if (isset($_SESSION['success_message'])): ?>
+<div class="container-fluid py-3">
+
+    <?php if (!empty($_SESSION['success_message'])): ?>
         <div class="alert alert-success">
-            <i class="fas fa-check-circle"></i>
-            <div>
-                <?php echo $_SESSION['success_message']; ?>
+            <?php
+            echo htmlspecialchars($_SESSION['success_message']);
+            unset($_SESSION['success_message']);
+            ?>
+        </div>
+    <?php endif; ?>
+
+    <?php if (!empty($_SESSION['error_message'])): ?>
+        <div class="alert alert-danger">
+            <?php
+            echo htmlspecialchars($_SESSION['error_message']);
+            unset($_SESSION['error_message']);
+            ?>
+        </div>
+    <?php endif; ?>
+
+    <div class="d-flex justify-content-between align-items-center mb-3">
+        <div>
+            <h1 class="h3 mb-0"><?= htmlspecialchars($page_title); ?></h1>
+            <small class="text-muted">Control y seguimiento avanzado de inventarios físicos por almacén.</small>
+        </div>
+
+        <div class="d-flex gap-2">
+            <?php if (in_array($rol, ['supervisor', 'admin', 'super_admin'])): ?>
+                <a href="inventario-fisico.php?view=listado_tomas" class="btn btn-outline-secondary btn-sm">
+                    <i class="bi bi-list-ul"></i> Listado de Tomas
+                </a>
+                <a href="inventario-fisico.php?view=nueva_toma" class="btn btn-primary btn-sm">
+                    <i class="bi bi-plus-circle"></i> Nueva Toma
+                </a>
+            <?php endif; ?>
+
+            <?php if (in_array($rol, ['operador', 'conductor'])): ?>
+                <a href="inventario-fisico.php?view=asignaciones" class="btn btn-outline-secondary btn-sm">
+                    <i class="bi bi-clipboard-check"></i> Mis Asignaciones
+                </a>
+            <?php endif; ?>
+        </div>
+    </div>
+
+    <?php if ($view === 'listado_tomas' && in_array($rol, ['supervisor', 'admin', 'super_admin'])): ?>
+
+        <!-- LISTADO DE TOMAS CON FILTROS AVANZADOS -->
+        <div class="card mb-3">
+            <div class="card-header">
+                <strong>Filtro de Tomas de Inventario</strong>
+            </div>
+            <div class="card-body">
+                <form method="get" class="row g-2">
+                    <input type="hidden" name="view" value="listado_tomas">
+
+                    <div class="col-md-3">
+                        <label class="form-label">Estado</label>
+                        <select name="estado" class="form-select form-select-sm">
+                            <option value="">Todos</option>
+                            <?php
+                            $estados = [
+                                'planificada' => 'Planificada',
+                                'en_proceso'  => 'En Proceso',
+                                'ajustada'    => 'Ajustada'
+                            ];
+                            $estado_sel = $_GET['estado'] ?? '';
+                            foreach ($estados as $k => $v): ?>
+                                <option value="<?= htmlspecialchars($k); ?>" <?= $estado_sel === $k ? 'selected' : ''; ?>>
+                                    <?= htmlspecialchars($v); ?>
+                                </option>
+                            <?php endforeach; ?>
+                        </select>
+                    </div>
+
+                    <div class="col-md-3">
+                        <label class="form-label">Almacén</label>
+                        <select name="almacen_id" class="form-select form-select-sm">
+                            <option value="">Todos</option>
+                            <?php
+                            $almacen_sel = intval($_GET['almacen_id'] ?? 0);
+                            foreach ($data['almacenes'] as $alm): ?>
+                                <option value="<?= (int)$alm['id']; ?>" <?= $almacen_sel === (int)$alm['id'] ? 'selected' : ''; ?>>
+                                    <?= htmlspecialchars($alm['nombre']); ?>
+                                </option>
+                            <?php endforeach; ?>
+                        </select>
+                    </div>
+
+                    <div class="col-md-3">
+                        <label class="form-label">Responsable</label>
+                        <select name="responsable_id" class="form-select form-select-sm">
+                            <option value="">Todos</option>
+                            <?php
+                            $resp_sel = intval($_GET['responsable_id'] ?? 0);
+                            foreach ($data['empleados'] as $emp): ?>
+                                <option value="<?= (int)$emp['id']; ?>" <?= $resp_sel === (int)$emp['id'] ? 'selected' : ''; ?>>
+                                    <?= htmlspecialchars($emp['nombre']); ?>
+                                </option>
+                            <?php endforeach; ?>
+                        </select>
+                    </div>
+
+                    <div class="col-md-3 d-flex align-items-end">
+                        <button type="submit" class="btn btn-primary btn-sm me-2">
+                            <i class="bi bi-search"></i> Aplicar
+                        </button>
+                        <a href="inventario-fisico.php?view=listado_tomas" class="btn btn-outline-secondary btn-sm">
+                            Limpiar
+                        </a>
+                    </div>
+                </form>
             </div>
         </div>
-        <?php unset($_SESSION['success_message']); endif; ?>
 
-        <!-- Contenido según la vista -->
-        <?php if ($view == 'nueva_toma' && in_array($rol, ['supervisor', 'admin', 'super_admin'])): ?>
-            
-            <!-- Vista: Crear nueva toma -->
-            <div class="card">
-                <div class="card-header">
-                    <h3><i class="fas fa-clipboard-check"></i> Crear Nueva Toma de Inventario</h3>
-                    <div class="card-actions">
-                        <a href="inventario-fisico.php" class="btn btn-outline btn-sm">
-                            <i class="fas fa-arrow-left"></i>
-                            Volver
-                        </a>
-                    </div>
-                </div>
-                <div class="card-body">
-                    <form method="POST" action="">
-                        <input type="hidden" name="action" value="crear_toma">
-                        
-                        <div class="row mb-4">
-                            <div class="col-md-6">
-                                <label for="nombre_toma" class="form-label">Nombre de la Toma</label>
-                                <input type="text" class="form-control" id="nombre_toma" name="nombre_toma" 
-                                       placeholder="Ej: Toma mensual Almacén Central" required>
-                            </div>
-                            <div class="col-md-6">
-                                <label for="almacen_id" class="form-label">Almacén</label>
-                                <select class="form-control" id="almacen_id" name="almacen_id" required>
-                                    <option value="">Seleccionar almacén</option>
-                                    <?php foreach ($data['almacenes'] as $almacen): ?>
-                                    <option value="<?php echo $almacen['id']; ?>">
-                                        <?php echo htmlspecialchars($almacen['nombre']); ?>
+        <div class="card">
+            <div class="card-header">
+                <strong>Tomas de Inventario</strong>
+            </div>
+            <div class="card-body table-responsive">
+                <table class="table table-sm table-hover align-middle">
+                    <thead>
+                        <tr>
+                            <th>Código</th>
+                            <th>Nombre</th>
+                            <th>Almacén</th>
+                            <th>Responsable</th>
+                            <th>Supervisor</th>
+                            <th>Fecha Planificada</th>
+                            <th>Estado</th>
+                            <th>Productos</th>
+                            <th>Discrepancias</th>
+                            <th>Acciones</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                    <?php if (!empty($data['tomas'])): ?>
+                        <?php foreach ($data['tomas'] as $toma): ?>
+                            <tr>
+                                <td><?= htmlspecialchars($toma['codigo_toma']); ?></td>
+                                <td><?= htmlspecialchars($toma['nombre']); ?></td>
+                                <td><?= htmlspecialchars($toma['almacen_nombre']); ?></td>
+                                <td><?= htmlspecialchars($toma['responsable_nombre']); ?></td>
+                                <td><?= htmlspecialchars($toma['supervisor_nombre']); ?></td>
+                                <td><?= htmlspecialchars($toma['fecha_planificada']); ?></td>
+                                <td>
+                                    <?php
+                                    $badge = 'secondary';
+                                    if ($toma['estado'] === 'planificada') $badge = 'warning';
+                                    if ($toma['estado'] === 'en_proceso')  $badge = 'info';
+                                    if ($toma['estado'] === 'ajustada')    $badge = 'success';
+                                    ?>
+                                    <span class="badge bg-<?= $badge; ?>">
+                                        <?= htmlspecialchars(ucfirst(str_replace('_', ' ', $toma['estado']))); ?>
+                                    </span>
+                                </td>
+                                <td>
+                                    <?= (int)$toma['productos_contados']; ?> /
+                                    <?= (int)$toma['total_productos']; ?>
+                                </td>
+                                <td>
+                                    <?php if ((int)$toma['productos_discrepancia'] > 0): ?>
+                                        <span class="badge bg-danger">
+                                            <?= (int)$toma['productos_discrepancia']; ?>
+                                        </span>
+                                    <?php else: ?>
+                                        <span class="badge bg-success">0</span>
+                                    <?php endif; ?>
+                                </td>
+                                <td>
+                                    <a href="inventario-fisico.php?view=detalle_toma&toma_id=<?= (int)$toma['id']; ?>"
+                                       class="btn btn-sm btn-outline-primary">
+                                        Ver Detalle
+                                    </a>
+                                </td>
+                            </tr>
+                        <?php endforeach; ?>
+                    <?php else: ?>
+                        <tr>
+                            <td colspan="10" class="text-center text-muted">
+                                No se encontraron tomas de inventario con los criterios seleccionados.
+                            </td>
+                        </tr>
+                    <?php endif; ?>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+    <?php elseif ($view === 'nueva_toma' && in_array($rol, ['supervisor', 'admin', 'super_admin'])): ?>
+
+        <!-- CREAR NUEVA TOMA -->
+        <div class="card">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <strong>Crear Nueva Toma de Inventario</strong>
+                <a href="inventario-fisico.php?view=listado_tomas" class="btn btn-sm btn-outline-secondary">
+                    Volver
+                </a>
+            </div>
+            <div class="card-body">
+                <form method="post">
+                    <input type="hidden" name="action" value="crear_toma">
+
+                    <div class="row g-3">
+                        <div class="col-md-4">
+                            <label class="form-label">Nombre de la Toma *</label>
+                            <input type="text" name="nombre_toma" class="form-control form-control-sm" required>
+                        </div>
+
+                        <div class="col-md-4">
+                            <label class="form-label">Almacén *</label>
+                            <select name="almacen_id" id="almacen_id" class="form-select form-select-sm" required>
+                                <option value="">Seleccionar almacén</option>
+                                <?php foreach ($data['almacenes'] as $alm): ?>
+                                    <option value="<?= (int)$alm['id']; ?>">
+                                        <?= htmlspecialchars($alm['nombre']); ?>
                                     </option>
-                                    <?php endforeach; ?>
-                                </select>
-                            </div>
+                                <?php endforeach; ?>
+                            </select>
                         </div>
-                        
-                        <div class="row mb-4">
-                            <div class="col-md-4">
-                                <label for="responsable_id" class="form-label">Responsable</label>
-                                <select class="form-control" id="responsable_id" name="responsable_id" required>
-                                    <option value="">Seleccionar empleado</option>
-                                    <?php foreach ($data['empleados'] as $empleado): ?>
-                                    <option value="<?php echo $empleado['id']; ?>">
-                                        <?php echo htmlspecialchars($empleado['nombre'] . ' ' . ($empleado['apellido'] ?? '')); ?>
+
+                        <div class="col-md-4">
+                            <label class="form-label">Responsable (operador/conductor) *</label>
+                            <select name="responsable_id" class="form-select form-select-sm" required>
+                                <option value="">Seleccionar empleado</option>
+                                <?php foreach ($data['empleados'] as $emp): ?>
+                                    <option value="<?= (int)$emp['id']; ?>">
+                                        <?= htmlspecialchars($emp['nombre']); ?>
                                     </option>
-                                    <?php endforeach; ?>
-                                </select>
-                            </div>
-                            <div class="col-md-4">
-                                <label for="fecha_planificada" class="form-label">Fecha Planificada</label>
-                                <input type="date" class="form-control" id="fecha_planificada" 
-                                       name="fecha_planificada" value="<?php echo date('Y-m-d'); ?>" required>
-                            </div>
-                            <div class="col-md-2">
-                                <label for="hora_inicio_planificada" class="form-label">Hora Inicio</label>
-                                <input type="time" class="form-control" id="hora_inicio_planificada" 
-                                       name="hora_inicio_planificada" value="08:00" required>
-                            </div>
-                            <div class="col-md-2">
-                                <label for="hora_fin_planificada" class="form-label">Hora Fin</label>
-                                <input type="time" class="form-control" id="hora_fin_planificada" 
-                                       name="hora_fin_planificada" value="17:00" required>
+                                <?php endforeach; ?>
+                            </select>
+                        </div>
+
+                        <div class="col-md-3">
+                            <label class="form-label">Fecha Planificada *</label>
+                            <input type="date" name="fecha_planificada" class="form-control form-control-sm" required>
+                        </div>
+
+                        <div class="col-md-3">
+                            <label class="form-label">Hora Inicio</label>
+                            <input type="time" name="hora_inicio_planificada" class="form-control form-control-sm">
+                        </div>
+
+                        <div class="col-md-3">
+                            <label class="form-label">Hora Fin</label>
+                            <input type="time" name="hora_fin_planificada" class="form-control form-control-sm">
+                        </div>
+
+                        <div class="col-md-3">
+                            <label class="form-label">Búsqueda por Código / QR</label>
+                            <input type="text" id="buscador_qr" class="form-control form-control-sm"
+                                   placeholder="Escanee el código o escriba para filtrar">
+                            <small class="text-muted">
+                                Compatible con lector de código de barras / QR (input tipo texto).
+                            </small>
+                        </div>
+
+                        <div class="col-12">
+                            <label class="form-label">Productos a Incluir *</label>
+                            <div class="border rounded p-2" style="max-height: 300px; overflow-y: auto;">
+                                <?php if (!empty($data['productos'])): ?>
+                                    <table class="table table-sm mb-0">
+                                        <thead>
+                                            <tr>
+                                                <th style="width: 40px;"></th>
+                                                <th>Código</th>
+                                                <th>Producto</th>
+                                                <th>Almacén</th>
+                                                <th>Ubicación</th>
+                                                <th>Stock Sistema</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody id="tabla-productos-inventario">
+                                        <?php foreach ($data['productos'] as $prod): ?>
+                                            <tr data-almacen-id="<?= (int)$prod['almacen_id']; ?>"
+                                                data-codigo="<?= htmlspecialchars($prod['codigo'] ?? ''); ?>">
+                                                <td>
+                                                    <input type="checkbox" name="productos[]"
+                                                           value="<?= (int)$prod['id']; ?>">
+                                                </td>
+                                                <td><?= htmlspecialchars($prod['codigo'] ?? ''); ?></td>
+                                                <td><?= htmlspecialchars($prod['nombre'] ?? ''); ?></td>
+                                                <td><?= htmlspecialchars($prod['almacen_nombre'] ?? ''); ?></td>
+                                                <td><?= htmlspecialchars($prod['ubicacion'] ?? ''); ?></td>
+                                                <td><?= htmlspecialchars($prod['stock_actual'] ?? 0); ?></td>
+                                            </tr>
+                                        <?php endforeach; ?>
+                                        </tbody>
+                                    </table>
+                                <?php else: ?>
+                                    <p class="mb-0 text-muted">
+                                        No hay productos activos configurados para este cliente.
+                                    </p>
+                                <?php endif; ?>
                             </div>
                         </div>
-                        
-                        <div class="mb-4">
-                            <label class="form-label">Productos a Incluir (seleccione un almacén primero)</label>
-                            <div id="productos-container" class="border rounded p-3">
-                                <div class="text-center text-muted">
-                                    Los productos se cargarán cuando se seleccione un almacén
-                                </div>
-                            </div>
-                        </div>
-                        
-                        <div class="d-flex justify-content-end">
-                            <button type="submit" class="btn btn-primary">
-                                <i class="fas fa-save"></i>
-                                Crear Toma de Inventario
+
+                        <div class="col-12 text-end">
+                            <button type="submit" class="btn btn-primary btn-sm">
+                                <i class="bi bi-save"></i> Crear Toma de Inventario
                             </button>
                         </div>
+                    </div>
+                </form>
+            </div>
+        </div>
+
+        <script>
+            // Filtrar productos por almacén y por código/QR
+            (function () {
+                const selAlmacen = document.getElementById('almacen_id');
+                const buscadorQR = document.getElementById('buscador_qr');
+                const filas       = document.querySelectorAll('#tabla-productos-inventario tr');
+
+                function aplicarFiltros() {
+                    const almacenId = selAlmacen ? selAlmacen.value : '';
+                    const textoQR   = (buscadorQR ? buscadorQR.value : '').toLowerCase();
+
+                    filas.forEach(function (tr) {
+                        const almRow  = tr.getAttribute('data-almacen-id') || '';
+                        const codRow  = (tr.getAttribute('data-codigo') || '').toLowerCase();
+
+                        let visible = true;
+
+                        if (almacenId && almRow !== almacenId) {
+                            visible = false;
+                        }
+
+                        if (textoQR && codRow.indexOf(textoQR) === -1) {
+                            visible = false;
+                        }
+
+                        tr.style.display = visible ? '' : 'none';
+                    });
+                }
+
+                if (selAlmacen) {
+                    selAlmacen.addEventListener('change', aplicarFiltros);
+                }
+                if (buscadorQR) {
+                    buscadorQR.addEventListener('keyup', aplicarFiltros);
+                }
+            })();
+        </script>
+
+    <?php elseif ($view === 'detalle_toma' && !empty($data['toma'])): ?>
+
+        <?php $toma = $data['toma']; ?>
+
+        <!-- DETALLE DE TOMA -->
+        <div class="d-flex justify-content-between align-items-center mb-3">
+            <a href="inventario-fisico.php?view=listado_tomas" class="btn btn-sm btn-outline-secondary">
+                Volver
+            </a>
+
+            <div class="d-flex gap-2">
+                <?php if ($toma['estado'] === 'planificada' && in_array($rol, ['supervisor', 'admin', 'super_admin'])): ?>
+                    <form method="post" class="d-inline">
+                        <input type="hidden" name="action" value="iniciar_toma">
+                        <input type="hidden" name="toma_id" value="<?= (int)$toma['id']; ?>">
+                        <button type="submit" class="btn btn-sm btn-warning">
+                            Iniciar Toma
+                        </button>
                     </form>
+                <?php endif; ?>
+
+                <?php if (in_array($toma['estado'], ['planificada', 'en_proceso']) && $toma['responsable_id'] == $user_id): ?>
+                    <a href="inventario-fisico.php?view=mis_conteos&toma_id=<?= (int)$toma['id']; ?>"
+                       class="btn btn-sm btn-primary">
+                        Ir a Contar Productos
+                    </a>
+                <?php endif; ?>
+
+                <form method="post" class="d-inline">
+                    <input type="hidden" name="action" value="exportar_excel">
+                    <input type="hidden" name="toma_id" value="<?= (int)$toma['id']; ?>">
+                    <button type="submit" class="btn btn-sm btn-outline-success">
+                        Exportar a Excel
+                    </button>
+                </form>
+            </div>
+        </div>
+
+        <div class="row g-3 mb-3">
+            <div class="col-md-4">
+                <div class="card h-100">
+                    <div class="card-header">
+                        Información de la Toma
+                    </div>
+                    <div class="card-body">
+                        <p class="mb-1"><strong>Código:</strong> <?= htmlspecialchars($toma['codigo_toma']); ?></p>
+                        <p class="mb-1"><strong>Nombre:</strong> <?= htmlspecialchars($toma['nombre']); ?></p>
+                        <p class="mb-1"><strong>Almacén:</strong> <?= htmlspecialchars($toma['almacen_nombre']); ?></p>
+                        <p class="mb-1"><strong>Responsable:</strong> <?= htmlspecialchars($toma['responsable_nombre']); ?></p>
+                        <p class="mb-1"><strong>Supervisor:</strong> <?= htmlspecialchars($toma['supervisor_nombre']); ?></p>
+                        <p class="mb-1"><strong>Estado:</strong>
+                            <span class="badge bg-secondary">
+                                <?= htmlspecialchars(ucfirst(str_replace('_', ' ', $toma['estado']))); ?>
+                            </span>
+                        </p>
+                        <p class="mb-1"><strong>Fecha Planificada:</strong> <?= htmlspecialchars($toma['fecha_planificada']); ?></p>
+                        <?php if (!empty($toma['fecha_inicio_real'])): ?>
+                            <p class="mb-1"><strong>Inicio Real:</strong> <?= htmlspecialchars($toma['fecha_inicio_real']); ?></p>
+                        <?php endif; ?>
+                        <?php if (!empty($toma['fecha_fin_real'])): ?>
+                            <p class="mb-1"><strong>Fin Real:</strong> <?= htmlspecialchars($toma['fecha_fin_real']); ?></p>
+                        <?php endif; ?>
+                    </div>
                 </div>
             </div>
-            
-        <?php elseif ($view == 'detalle_toma' && isset($data['toma'])): ?>
-            
-            <!-- Vista: Detalle de una toma -->
-            <div class="card">
-                <div class="card-header">
-                    <h3>
-                        <i class="fas fa-clipboard-list"></i>
-                        Toma: <?php echo htmlspecialchars($data['toma']['codigo_toma']); ?>
-                        <small class="text-muted">- <?php echo htmlspecialchars($data['toma']['nombre']); ?></small>
-                    </h3>
-                    <div class="card-actions">
-                        <a href="inventario-fisico.php" class="btn btn-outline btn-sm">
-                            <i class="fas fa-arrow-left"></i>
-                            Volver
-                        </a>
+
+            <div class="col-md-4">
+                <div class="card h-100">
+                    <div class="card-header">
+                        Resumen de Conteos
+                    </div>
+                    <div class="card-body">
+                        <p class="mb-1"><strong>Total Productos:</strong> <?= (int)$toma['total_productos']; ?></p>
+                        <p class="mb-1"><strong>Contados:</strong> <?= (int)$toma['productos_contados']; ?></p>
+                        <p class="mb-1"><strong>Pendientes:</strong> <?= (int)$toma['productos_pendientes']; ?></p>
+                        <p class="mb-1"><strong>Discrepancias:</strong>
+                            <?php if ((int)$toma['productos_discrepancia'] > 0): ?>
+                                <span class="badge bg-danger">
+                                    <?= (int)$toma['productos_discrepancia']; ?>
+                                </span>
+                            <?php else: ?>
+                                <span class="badge bg-success">0</span>
+                            <?php endif; ?>
+                        </p>
                     </div>
                 </div>
+            </div>
+
+            <div class="col-md-4">
+                <div class="card h-100">
+                    <div class="card-header">
+                        Ajuste de Inventario
+                    </div>
+                    <div class="card-body">
+                        <p class="small text-muted">
+                            Al hacer clic en <strong>"Ajustar Inventario"</strong>, se actualizarán los stocks
+                            con las cantidades contadas y se registrará el movimiento en el Kardex.
+                        </p>
+                        <?php if (in_array($rol, ['supervisor', 'admin', 'super_admin']) && $toma['estado'] !== 'ajustada'): ?>
+                            <form method="post">
+                                <input type="hidden" name="action" value="ajustar_inventario">
+                                <input type="hidden" name="toma_id" value="<?= (int)$toma['id']; ?>">
+
+                                <div class="border rounded p-2 mb-2" style="max-height: 200px; overflow-y: auto;">
+                                    <?php
+                                    $discrepancias = array_filter($data['detalles'], function ($d) {
+                                        return $d['estado'] === 'discrepancia';
+                                    });
+                                    ?>
+                                    <?php if (!empty($discrepancias)): ?>
+                                        <p class="small mb-1"><strong>Seleccionar discrepancias para ajustar:</strong></p>
+                                        <?php foreach ($discrepancias as $d): ?>
+                                            <div class="form-check small">
+                                                <input class="form-check-input" type="checkbox"
+                                                       name="ajustar[]" value="<?= (int)$d['id']; ?>" id="aj_<?= (int)$d['id']; ?>">
+                                                <label class="form-check-label" for="aj_<?= (int)$d['id']; ?>">
+                                                    <?= htmlspecialchars($d['producto_nombre']); ?>
+                                                    (Sistema: <?= htmlspecialchars($d['cantidad_sistema']); ?>,
+                                                    Contado: <?= htmlspecialchars($d['cantidad_contada']); ?>,
+                                                    Dif: <?= htmlspecialchars($d['diferencia']); ?>)
+                                                </label>
+                                            </div>
+                                        <?php endforeach; ?>
+                                    <?php else: ?>
+                                        <p class="small mb-0 text-muted">
+                                            No hay discrepancias pendientes de ajuste.
+                                        </p>
+                                    <?php endif; ?>
+                                </div>
+
+                                <?php if (!empty($discrepancias)): ?>
+                                    <button type="submit" class="btn btn-sm btn-danger">
+                                        Ajustar Inventario
+                                    </button>
+                                <?php endif; ?>
+                            </form>
+                        <?php else: ?>
+                            <p class="small mb-0 text-muted">
+                                La toma ya fue ajustada o no tienes permisos para ajustar.
+                            </p>
+                        <?php endif; ?>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- TABLA DE DETALLE DE PRODUCTOS -->
+        <div class="card">
+            <div class="card-header">
+                Detalle de Productos
+            </div>
+            <div class="card-body table-responsive">
+                <table class="table table-sm table-hover align-middle">
+                    <thead>
+                        <tr>
+                            <th>Código</th>
+                            <th>Producto</th>
+                            <th>Ubicación</th>
+                            <th>Cant. Sistema</th>
+                            <th>Cant. Contada</th>
+                            <th>Diferencia</th>
+                            <th>Estado</th>
+                            <th>Observaciones</th>
+                            <th>Acciones</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                    <?php if (!empty($data['detalles'])): ?>
+                        <?php foreach ($data['detalles'] as $d): ?>
+                            <tr>
+                                <td><?= htmlspecialchars($d['codigo'] ?? ''); ?></td>
+                                <td><?= htmlspecialchars($d['producto_nombre'] ?? ''); ?></td>
+                                <td><?= htmlspecialchars($d['ubicacion'] ?? ''); ?></td>
+                                <td><?= htmlspecialchars($d['cantidad_sistema'] ?? 0); ?></td>
+                                <td><?= htmlspecialchars($d['cantidad_contada'] ?? 0); ?></td>
+                                <td><?= htmlspecialchars($d['diferencia'] ?? 0); ?></td>
+                                <td>
+                                    <?php
+                                    $badge = 'secondary';
+                                    if ($d['estado'] === 'pendiente')      $badge = 'warning';
+                                    if ($d['estado'] === 'discrepancia')   $badge = 'danger';
+                                    if ($d['estado'] === 'verificado')     $badge = 'success';
+                                    if ($d['estado'] === 'no_encontrado')  $badge = 'dark';
+                                    ?>
+                                    <span class="badge bg-<?= $badge; ?>">
+                                        <?= htmlspecialchars(ucfirst(str_replace('_', ' ', $d['estado']))); ?>
+                                    </span>
+                                </td>
+                                <td class="small">
+                                    <?= htmlspecialchars($d['observaciones'] ?? ''); ?>
+                                </td>
+                                <td>
+                                    <div class="btn-group btn-group-sm" role="group">
+                                        <?php if (in_array($toma['estado'], ['planificada', 'en_proceso'])): ?>
+                                            <a href="inventario-fisico.php?view=detalle_toma&toma_id=<?= (int)$toma['id']; ?>&action_form=conteo&detalle_id=<?= (int)$d['id']; ?>"
+                                               class="btn btn-outline-primary">
+                                                Contar
+                                            </a>
+                                            <a href="inventario-fisico.php?view=detalle_toma&toma_id=<?= (int)$toma['id']; ?>&action_form=no_encontrado&detalle_id=<?= (int)$d['id']; ?>"
+                                               class="btn btn-outline-dark">
+                                                No Encontrado
+                                            </a>
+                                            <?php if ($d['estado'] === 'discrepancia'): ?>
+                                                <a href="inventario-fisico.php?view=detalle_toma&toma_id=<?= (int)$toma['id']; ?>&action_form=reconteo&detalle_id=<?= (int)$d['id']; ?>"
+                                                   class="btn btn-outline-warning">
+                                                    Solicitar Reconteo
+                                                </a>
+                                                <a href="inventario-fisico.php?view=detalle_toma&toma_id=<?= (int)$toma['id']; ?>&action_form=aprobar&detalle_id=<?= (int)$d['id']; ?>"
+                                                   class="btn btn-outline-success">
+                                                    Aprobar
+                                                </a>
+                                            <?php endif; ?>
+                                        <?php else: ?>
+                                            <span class="text-muted small">Toma cerrada</span>
+                                        <?php endif; ?>
+                                    </div>
+                                </td>
+                            </tr>
+                        <?php endforeach; ?>
+                    <?php else: ?>
+                        <tr>
+                            <td colspan="9" class="text-center text-muted">
+                                No hay productos en esta toma de inventario.
+                            </td>
+                        </tr>
+                    <?php endif; ?>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- FORMULARIOS MODALES "SIMPLIFICADOS" EN LA MISMA PANTALLA -->
+        <?php if (!empty($action_form) && !empty($data['detalle_form'])): ?>
+            <?php $df = $data['detalle_form']; ?>
+            <div class="card mt-3">
+                <div class="card-header">
+                    <?php if ($action_form === 'conteo'): ?>
+                        Registrar Conteo
+                    <?php elseif ($action_form === 'no_encontrado'): ?>
+                        Marcar Producto como No Encontrado
+                    <?php elseif ($action_form === 'reconteo'): ?>
+                        Solicitar Reconteo
+                    <?php elseif ($action_form === 'aprobar'): ?>
+                        Aprobar Conteo
+                    <?php endif; ?>
+                </div>
                 <div class="card-body">
-                    <!-- Información general -->
-                    <div class="row mb-4">
-                        <div class="col-md-3">
-                            <div class="card stat-card-sm">
-                                <div class="card-body">
-                                    <div class="info-label">Estado</div>
-                                    <div class="info-value">
-                                        <span class="status-badge <?php 
-                                            echo $data['toma']['estado'] == 'ajustada' ? 'success' : 
-                                                 ($data['toma']['estado'] == 'en_proceso' ? 'info' : 
-                                                 ($data['toma']['estado'] == 'completada' ? 'success' : 'warning')); 
-                                        ?>">
-                                            <?php echo ucfirst(str_replace('_', ' ', $data['toma']['estado'])); ?>
-                                        </span>
-                                    </div>
-                                </div>
+                    <?php if ($action_form === 'conteo'): ?>
+
+                        <form method="post" class="row g-2">
+                            <input type="hidden" name="action" value="registrar_conteo">
+                            <input type="hidden" name="detalle_id" value="<?= (int)$df['id']; ?>">
+
+                            <div class="col-12">
+                                <p class="mb-1"><strong>Producto:</strong> <?= htmlspecialchars($df['producto_nombre']); ?></p>
+                                <p class="mb-1"><strong>Ubicación:</strong> <?= htmlspecialchars($df['ubicacion']); ?></p>
+                                <p class="mb-1"><strong>Cantidad en sistema:</strong> <?= htmlspecialchars($df['cantidad_sistema']); ?></p>
                             </div>
-                        </div>
-                        <div class="col-md-3">
-                            <div class="card stat-card-sm">
-                                <div class="card-body">
-                                    <div class="info-label">Almacén</div>
-                                    <div class="info-value"><?php echo htmlspecialchars($data['toma']['almacen_nombre']); ?></div>
-                                </div>
+
+                            <div class="col-md-4">
+                                <label class="form-label">Cantidad Contada *</label>
+                                <input type="number" step="0.01" min="0" name="cantidad_contada"
+                                       class="form-control form-control-sm" required>
                             </div>
-                        </div>
-                        <div class="col-md-3">
-                            <div class="card stat-card-sm">
-                                <div class="card-body">
-                                    <div class="info-label">Responsable</div>
-                                    <div class="info-value"><?php echo htmlspecialchars($data['toma']['responsable_nombre']); ?></div>
-                                </div>
+
+                            <div class="col-md-8">
+                                <label class="form-label">Observaciones (opcional)</label>
+                                <input type="text" name="observaciones" class="form-control form-control-sm">
                             </div>
-                        </div>
-                        <div class="col-md-3">
-                            <div class="card stat-card-sm">
-                                <div class="card-body">
-                                    <div class="info-label">Supervisor</div>
-                                    <div class="info-value"><?php echo htmlspecialchars($data['toma']['supervisor_nombre']); ?></div>
-                                </div>
+
+                            <div class="col-12 text-end">
+                                <a href="inventario-fisico.php?view=detalle_toma&toma_id=<?= (int)$toma['id']; ?>"
+                                   class="btn btn-outline-secondary btn-sm">
+                                    Cancelar
+                                </a>
+                                <button type="submit" class="btn btn-primary btn-sm">
+                                    Guardar Conteo
+                                </button>
                             </div>
-                        </div>
-                    </div>
-                    
-                    <!-- Estadísticas -->
-                    <div class="row mb-4">
-                        <div class="col-md-3">
-                            <div class="stat-card-sm">
-                                <div class="stat-number"><?php echo $data['toma']['total_productos']; ?></div>
-                                <div class="stat-label">Total Productos</div>
-                            </div>
-                        </div>
-                        <div class="col-md-3">
-                            <div class="stat-card-sm">
-                                <div class="stat-number text-success"><?php echo $data['toma']['productos_contados']; ?></div>
-                                <div class="stat-label">Contados</div>
-                            </div>
-                        </div>
-                        <div class="col-md-3">
-                            <div class="stat-card-sm">
-                                <div class="stat-number text-warning"><?php echo $data['toma']['productos_pendientes']; ?></div>
-                                <div class="stat-label">Pendientes</div>
-                            </div>
-                        </div>
-                        <div class="col-md-3">
-                            <div class="stat-card-sm">
-                                <div class="stat-number text-danger"><?php echo $data['toma']['productos_discrepancia']; ?></div>
-                                <div class="stat-label">Discrepancias</div>
-                            </div>
-                        </div>
-                    </div>
-                    
-                    <!-- FORMULARIO EN LÍNEA (cuando se necesita) -->
-                    <?php if ($action_form && $detalle_id_form && isset($data['detalle_form'])): ?>
-                        <div class="inline-form-container">
-                            <?php if ($action_form == 'conteo'): ?>
-                                <h4 class="inline-form-title">Registrar Conteo</h4>
-                                <p><strong>Producto:</strong> <?php echo htmlspecialchars($data['detalle_form']['producto_nombre']); ?> (<?php echo htmlspecialchars($data['detalle_form']['codigo']); ?>)</p>
-                                <p><strong>Ubicación:</strong> <?php echo htmlspecialchars($data['detalle_form']['ubicacion']); ?></p>
-                                <p><strong>Cantidad en sistema:</strong> <?php echo $data['detalle_form']['cantidad_sistema']; ?></p>
-                                
-                                <form method="POST" action="">
-                                    <input type="hidden" name="action" value="registrar_conteo">
-                                    <input type="hidden" name="detalle_id" value="<?php echo $data['detalle_form']['id']; ?>">
-                                    
-                                    <div class="mb-3">
-                                        <label for="cantidad_contada" class="form-label">Cantidad Contada *</label>
-                                        <input type="number" step="0.01" class="form-control" id="cantidad_contada" name="cantidad_contada" required>
-                                    </div>
-                                    <div class="mb-3">
-                                        <label for="observaciones" class="form-label">Observaciones (opcional)</label>
-                                        <textarea class="form-control" id="observaciones" name="observaciones" rows="3" placeholder="Ej: Producto dañado, embalaje abierto, etc."></textarea>
-                                    </div>
-                                    
-                                    <div class="form-actions">
-                                        <button type="submit" class="btn btn-success">Guardar Conteo</button>
-                                        <a href="inventario-fisico.php?view=detalle_toma&toma_id=<?php echo $toma_id; ?>" class="btn btn-outline">Cancelar</a>
-                                    </div>
-                                </form>
-                                
-                            <?php elseif ($action_form == 'no_encontrado'): ?>
-                                <h4 class="inline-form-title">Marcar Producto como No Encontrado</h4>
-                                <p><strong>Producto:</strong> <?php echo htmlspecialchars($data['detalle_form']['producto_nombre']); ?> (<?php echo htmlspecialchars($data['detalle_form']['codigo']); ?>)</p>
-                                
-                                <form method="POST" action="">
-                                    <input type="hidden" name="action" value="marcar_no_encontrado">
-                                    <input type="hidden" name="detalle_id" value="<?php echo $data['detalle_form']['id']; ?>">
-                                    <input type="hidden" name="toma_id" value="<?php echo $toma_id; ?>">
-                                    
-                                    <div class="mb-3">
-                                        <label for="motivo_no_encontrado" class="form-label">Motivo / Observaciones *</label>
-                                        <textarea class="form-control" id="motivo_no_encontrado" name="motivo_no_encontrado" rows="4" required placeholder="Explique por qué no se encontró el producto"></textarea>
-                                    </div>
-                                    
-                                    <div class="form-actions">
-                                        <button type="submit" class="btn btn-warning">Marcar como No Encontrado</button>
-                                        <a href="inventario-fisico.php?view=detalle_toma&toma_id=<?php echo $toma_id; ?>" class="btn btn-outline">Cancelar</a>
-                                    </div>
-                                </form>
-                                
-                            <?php elseif ($action_form == 'reconteo'): ?>
-                                <h4 class="inline-form-title">Solicitar Reconteo</h4>
-                                <p><strong>Producto:</strong> <?php echo htmlspecialchars($data['detalle_form']['producto_nombre']); ?> (<?php echo htmlspecialchars($data['detalle_form']['codigo']); ?>)</p>
-                                <p><strong>Cantidad en sistema:</strong> <?php echo $data['detalle_form']['cantidad_sistema']; ?></p>
-                                <p><strong>Cantidad contada:</strong> <?php echo $data['detalle_form']['cantidad_contada']; ?></p>
-                                
-                                <form method="POST" action="">
-                                    <input type="hidden" name="action" value="solicitar_reconteo">
-                                    <input type="hidden" name="detalle_id" value="<?php echo $data['detalle_form']['id']; ?>">
-                                    
-                                    <div class="mb-3">
-                                        <label for="motivo_reconteo" class="form-label">Motivo del Reconteo *</label>
-                                        <textarea class="form-control" id="motivo_reconteo" name="motivo_reconteo" rows="4" required placeholder="Explique por qué se necesita un reconteo"></textarea>
-                                    </div>
-                                    
-                                    <div class="form-actions">
-                                        <button type="submit" class="btn btn-info">Solicitar Reconteo</button>
-                                        <a href="inventario-fisico.php?view=detalle_toma&toma_id=<?php echo $toma_id; ?>" class="btn btn-outline">Cancelar</a>
-                                    </div>
-                                </form>
-                            <?php endif; ?>
-                        </div>
-                    <?php endif; ?>
-                    
-                    <!-- Acciones principales -->
-                    <?php if ($data['toma']['estado'] == 'planificada' && in_array($rol, ['supervisor', 'admin', 'super_admin'])): ?>
-                    <div class="d-flex mb-4">
-                        <form method="POST" action="" class="me-2">
-                            <input type="hidden" name="action" value="iniciar_toma">
-                            <input type="hidden" name="toma_id" value="<?php echo $data['toma']['id']; ?>">
-                            <button type="submit" class="btn btn-success">
-                                <i class="fas fa-play-circle"></i>
-                                Iniciar Toma
-                            </button>
                         </form>
-                    </div>
+
+                    <?php elseif ($action_form === 'no_encontrado'): ?>
+
+                        <form method="post" class="row g-2">
+                            <input type="hidden" name="action" value="marcar_no_encontrado">
+                            <input type="hidden" name="detalle_id" value="<?= (int)$df['id']; ?>">
+                            <input type="hidden" name="toma_id" value="<?= (int)$toma['id']; ?>">
+
+                            <div class="col-12">
+                                <p class="mb-1"><strong>Producto:</strong> <?= htmlspecialchars($df['producto_nombre']); ?></p>
+                            </div>
+
+                            <div class="col-12">
+                                <label class="form-label">Motivo / Observaciones *</label>
+                                <textarea name="motivo_no_encontrado" class="form-control form-control-sm" rows="2" required></textarea>
+                            </div>
+
+                            <div class="col-12 text-end">
+                                <a href="inventario-fisico.php?view=detalle_toma&toma_id=<?= (int)$toma['id']; ?>"
+                                   class="btn btn-outline-secondary btn-sm">
+                                    Cancelar
+                                </a>
+                                <button type="submit" class="btn btn-dark btn-sm">
+                                    Marcar como No Encontrado
+                                </button>
+                            </div>
+                        </form>
+
+                    <?php elseif ($action_form === 'reconteo'): ?>
+
+                        <form method="post" class="row g-2">
+                            <input type="hidden" name="action" value="solicitar_reconteo">
+                            <input type="hidden" name="detalle_id" value="<?= (int)$df['id']; ?>">
+
+                            <div class="col-12">
+                                <p class="mb-1"><strong>Producto:</strong> <?= htmlspecialchars($df['producto_nombre']); ?></p>
+                                <p class="mb-1"><strong>Cantidad en sistema:</strong> <?= htmlspecialchars($df['cantidad_sistema']); ?></p>
+                                <p class="mb-1"><strong>Cantidad contada:</strong> <?= htmlspecialchars($df['cantidad_contada']); ?></p>
+                            </div>
+
+                            <div class="col-12">
+                                <label class="form-label">Motivo del Reconteo *</label>
+                                <textarea name="motivo_reconteo" class="form-control form-control-sm" rows="2" required></textarea>
+                            </div>
+
+                            <div class="col-12 text-end">
+                                <a href="inventario-fisico.php?view=detalle_toma&toma_id=<?= (int)$toma['id']; ?>"
+                                   class="btn btn-outline-secondary btn-sm">
+                                    Cancelar
+                                </a>
+                                <button type="submit" class="btn btn-warning btn-sm">
+                                    Solicitar Reconteo
+                                </button>
+                            </div>
+                        </form>
+
+                    <?php elseif ($action_form === 'aprobar'): ?>
+
+                        <form method="post" class="row g-2">
+                            <input type="hidden" name="action" value="aprobar_conteo">
+                            <input type="hidden" name="detalle_id" value="<?= (int)$df['id']; ?>">
+                            <input type="hidden" name="toma_id" value="<?= (int)$toma['id']; ?>">
+
+                            <div class="col-12">
+                                <p class="mb-1"><strong>Producto:</strong> <?= htmlspecialchars($df['producto_nombre']); ?></p>
+                                <p class="mb-1"><strong>Cantidad en sistema:</strong> <?= htmlspecialchars($df['cantidad_sistema']); ?></p>
+                                <p class="mb-1"><strong>Cantidad contada:</strong> <?= htmlspecialchars($df['cantidad_contada']); ?></p>
+                                <p class="mb-1"><strong>Diferencia:</strong> <?= htmlspecialchars($df['diferencia']); ?></p>
+                            </div>
+
+                            <div class="col-12 text-end">
+                                <a href="inventario-fisico.php?view=detalle_toma&toma_id=<?= (int)$toma['id']; ?>"
+                                   class="btn btn-outline-secondary btn-sm">
+                                    Cancelar
+                                </a>
+                                <button type="submit" class="btn btn-success btn-sm">
+                                    Aprobar Conteo
+                                </button>
+                            </div>
+                        </form>
+
                     <?php endif; ?>
-                    
-                    <!-- Si es empleado responsable, mostrar botón para ir a conteos -->
-                    <?php if ($data['toma']['responsable_id'] == $user_id && $data['toma']['estado'] == 'en_proceso'): ?>
-                    <div class="d-flex mb-4">
-                        <a href="inventario-fisico.php?view=mis_conteos&toma_id=<?php echo $data['toma']['id']; ?>" 
-                           class="btn btn-primary">
-                            <i class="fas fa-clipboard-check"></i>
-                            Ir a Contar Productos
-                        </a>
-                    </div>
+                </div>
+            </div>
+        <?php endif; ?>
+
+    <?php elseif ($view === 'asignaciones' && in_array($rol, ['operador', 'conductor'])): ?>
+
+        <!-- ASIGNACIONES PARA OPERADORES / CONDUCTORES -->
+        <div class="card">
+            <div class="card-header">
+                Tomas de Inventario Asignadas
+            </div>
+            <div class="card-body table-responsive">
+                <table class="table table-sm table-hover align-middle">
+                    <thead>
+                        <tr>
+                            <th>Código</th>
+                            <th>Nombre</th>
+                            <th>Almacén</th>
+                            <th>Supervisor</th>
+                            <th>Fecha Planificada</th>
+                            <th>Estado</th>
+                            <th>Productos Pendientes</th>
+                            <th>Acciones</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                    <?php if (!empty($data['tomas_asignadas'])): ?>
+                        <?php foreach ($data['tomas_asignadas'] as $t): ?>
+                            <tr>
+                                <td><?= htmlspecialchars($t['codigo_toma']); ?></td>
+                                <td><?= htmlspecialchars($t['nombre']); ?></td>
+                                <td><?= htmlspecialchars($t['almacen_nombre']); ?></td>
+                                <td><?= htmlspecialchars($t['supervisor_nombre']); ?></td>
+                                <td><?= htmlspecialchars($t['fecha_planificada']); ?></td>
+                                <td>
+                                    <?php
+                                    $badge = 'secondary';
+                                    if ($t['estado'] === 'planificada') $badge = 'warning';
+                                    if ($t['estado'] === 'en_proceso')  $badge = 'info';
+                                    if ($t['estado'] === 'ajustada')    $badge = 'success';
+                                    ?>
+                                    <span class="badge bg-<?= $badge; ?>">
+                                        <?= htmlspecialchars(ucfirst(str_replace('_', ' ', $t['estado']))); ?>
+                                    </span>
+                                </td>
+                                <td><?= (int)$t['productos_pendientes']; ?></td>
+                                <td>
+                                    <a href="inventario-fisico.php?view=mis_conteos&toma_id=<?= (int)$t['id']; ?>"
+                                       class="btn btn-sm btn-primary">
+                                        Ir a Contar
+                                    </a>
+                                </td>
+                            </tr>
+                        <?php endforeach; ?>
+                    <?php else: ?>
+                        <tr>
+                            <td colspan="8" class="text-center text-muted">
+                                No tienes tomas de inventario asignadas actualmente.
+                            </td>
+                        </tr>
                     <?php endif; ?>
-                    
-                    <!-- Lista de productos -->
-                    <h4 class="mb-3">Detalle de Productos</h4>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+    <?php elseif ($view === 'mis_conteos' && in_array($rol, ['operador', 'conductor'])): ?>
+
+        <!-- VISTA SIMPLIFICADA DE CONTEO PARA OPERADOR / CONDUCTOR -->
+        <div class="card">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <span>Productos Pendientes por Contar</span>
+                <a href="inventario-fisico.php?view=asignaciones" class="btn btn-sm btn-outline-secondary">
+                    Volver a Asignaciones
+                </a>
+            </div>
+            <div class="card-body">
+                <?php if (!empty($data['detalles_pendientes'])): ?>
                     <div class="table-responsive">
-                        <table class="table table-striped">
+                        <table class="table table-sm table-hover align-middle">
                             <thead>
                                 <tr>
                                     <th>Código</th>
                                     <th>Producto</th>
                                     <th>Ubicación</th>
                                     <th>Cant. Sistema</th>
-                                    <th>Cant. Contada</th>
-                                    <th>Diferencia</th>
-                                    <th>Estado</th>
-                                    <th>Acciones</th>
+                                    <th>Conteo</th>
                                 </tr>
                             </thead>
                             <tbody>
-                                <?php foreach ($data['detalles'] as $detalle): ?>
+                            <?php foreach ($data['detalles_pendientes'] as $d): ?>
                                 <tr>
-                                    <td><?php echo htmlspecialchars($detalle['codigo']); ?></td>
-                                    <td><?php echo htmlspecialchars($detalle['producto_nombre']); ?></td>
-                                    <td><?php echo htmlspecialchars($detalle['ubicacion']); ?></td>
-                                    <td><?php echo $detalle['cantidad_sistema']; ?></td>
-                                    <td>
-                                        <?php if ($detalle['cantidad_contada'] !== null): ?>
-                                        <?php echo $detalle['cantidad_contada']; ?>
-                                        <?php else: ?>
-                                        <span class="text-muted">No contado</span>
-                                        <?php endif; ?>
-                                    </td>
-                                    <td>
-                                        <?php if ($detalle['diferencia'] != 0): ?>
-                                        <span class="text-danger"><?php echo $detalle['diferencia']; ?></span>
-                                        <?php else: ?>
-                                        <span class="text-success"><?php echo $detalle['diferencia']; ?></span>
-                                        <?php endif; ?>
-                                    </td>
-                                    <td>
-                                        <span class="status-badge <?php 
-                                            echo $detalle['estado'] == 'verificado' ? 'success' : 
-                                                 ($detalle['estado'] == 'discrepancia' ? 'danger' : 
-                                                 ($detalle['estado'] == 'no_encontrado' ? 'warning' : 
-                                                 ($detalle['estado'] == 'contado' ? 'info' : 'secondary'))); 
-                                        ?>">
-                                            <?php echo ucfirst(str_replace('_', ' ', $detalle['estado'])); ?>
-                                        </span>
-                                        <?php if ($detalle['necesita_reconteo']): ?>
-                                        <span class="badge bg-warning">Reconteo</span>
-                                        <?php endif; ?>
-                                    </td>
-                                    <td>
-                                        <!-- Acciones según rol y estado -->
-                                        <?php if ($data['toma']['estado'] == 'en_proceso' && $user_id == $data['toma']['responsable_id'] && $detalle['estado'] == 'pendiente'): ?>
-                                        <a href="inventario-fisico.php?view=detalle_toma&toma_id=<?php echo $toma_id; ?>&action_form=conteo&detalle_id=<?php echo $detalle['id']; ?>" 
-                                           class="btn btn-sm btn-outline-primary">
-                                            <i class="fas fa-edit"></i> Contar
-                                        </a>
-                                        <?php endif; ?>
-                                        
-                                        <?php if ($detalle['estado'] == 'discrepancia' && in_array($rol, ['supervisor', 'admin', 'super_admin'])): ?>
-                                        <a href="inventario-fisico.php?view=detalle_toma&toma_id=<?php echo $toma_id; ?>&action_form=reconteo&detalle_id=<?php echo $detalle['id']; ?>" 
-                                           class="btn btn-sm btn-warning">
-                                            <i class="fas fa-redo"></i> Reconteo
-                                        </a>
-                                        <?php endif; ?>
-                                        
-                                        <?php if ($detalle['estado'] == 'discrepancia' && in_array($rol, ['supervisor', 'admin', 'super_admin'])): ?>
-                                        <form method="POST" action="" style="display: inline;">
-                                            <input type="hidden" name="action" value="aprobar_conteo">
-                                            <input type="hidden" name="detalle_id" value="<?php echo $detalle['id']; ?>">
-                                            <input type="hidden" name="toma_id" value="<?php echo $data['toma']['id']; ?>">
-                                            <button type="submit" class="btn btn-sm btn-success">
-                                                <i class="fas fa-check"></i> Aprobar
-                                            </button>
-                                        </form>
-                                        <?php endif; ?>
-                                    </td>
-                                </tr>
-                                <?php endforeach; ?>
-                            </tbody>
-                        </table>
-                    </div>
-                    
-                    <!-- Botón para ajustar inventario (supervisor) -->
-                    <?php if ($data['toma']['estado'] == 'en_proceso' && $data['toma']['productos_pendientes'] == 0 && 
-                              in_array($rol, ['supervisor', 'admin', 'super_admin'])): ?>
-                    <div class="mt-4">
-                        <form method="POST" action="" id="form-ajustar">
-                            <input type="hidden" name="action" value="ajustar_inventario">
-                            <input type="hidden" name="toma_id" value="<?php echo $data['toma']['id']; ?>">
-                            
-                            <div class="alert alert-info">
-                                <h5><i class="fas fa-info-circle"></i> Ajuste de Inventario</h5>
-                                <p>Al hacer clic en "Ajustar Inventario", se actualizarán los stocks con las cantidades contadas.</p>
-                                
-                                <?php 
-                                $discrepancias = array_filter($data['detalles'], function($d) {
-                                    return $d['estado'] == 'discrepancia';
-                                });
-                                ?>
-                                
-                                <?php if (count($discrepancias) > 0): ?>
-                                <div class="mt-3">
-                                    <label class="form-label">Seleccionar discrepancias para ajustar:</label>
-                                    <?php foreach ($discrepancias as $detalle): ?>
-                                    <div class="form-check">
-                                        <input class="form-check-input" type="checkbox" 
-                                               name="ajustar[]" value="<?php echo $detalle['id']; ?>" checked>
-                                        <label class="form-check-label">
-                                            <?php echo htmlspecialchars($detalle['producto_nombre']); ?>:
-                                            Sistema: <?php echo $detalle['cantidad_sistema']; ?>,
-                                            Contado: <?php echo $detalle['cantidad_contada']; ?>
-                                            (Diferencia: <?php echo $detalle['diferencia']; ?>)
-                                        </label>
-                                    </div>
-                                    <?php endforeach; ?>
-                                </div>
-                                <?php else: ?>
-                                <p class="mb-0">No hay discrepancias. El inventario está correcto.</p>
-                                <?php endif; ?>
-                            </div>
-                            
-                            <button type="submit" class="btn btn-primary">
-                                <i class="fas fa-check-double"></i>
-                                Ajustar Inventario
-                            </button>
-                        </form>
-                    </div>
-                    <?php endif; ?>
-                </div>
-            </div>
-            
-        <?php elseif ($view == 'asignaciones' && in_array($rol, ['operador', 'conductor'])): ?>
-            
-            <!-- Vista: Asignaciones para empleados -->
-            <div class="card">
-                <div class="card-header">
-                    <h3><i class="fas fa-clipboard-list"></i> Mis Tareas de Inventario</h3>
-                </div>
-                <div class="card-body">
-                    <?php if (empty($data['tomas_asignadas'])): ?>
-                    <div class="empty-state">
-                        <i class="fas fa-clipboard-check"></i>
-                        <h4>No hay tareas asignadas</h4>
-                        <p>No tienes tomas de inventario asignadas en este momento.</p>
-                    </div>
-                    <?php else: ?>
-                    <div class="table-responsive">
-                        <table class="table table-striped">
-                            <thead>
-                                <tr>
-                                    <th>Código</th>
-                                    <th>Almacén</th>
-                                    <th>Estado</th>
-                                    <th>Fecha Planificada</th>
-                                    <th>Productos</th>
-                                    <th>Progreso</th>
-                                    <th>Acciones</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                <?php foreach ($data['tomas_asignadas'] as $toma): ?>
-                                <tr>
-                                    <td><?php echo htmlspecialchars($toma['codigo_toma']); ?></td>
-                                    <td><?php echo htmlspecialchars($toma['almacen_nombre']); ?></td>
-                                    <td>
-                                        <span class="status-badge <?php 
-                                            echo $toma['estado'] == 'completada' ? 'success' : 
-                                                 ($toma['estado'] == 'en_proceso' ? 'info' : 'warning'); 
-                                        ?>">
-                                            <?php echo ucfirst(str_replace('_', ' ', $toma['estado'])); ?>
-                                        </span>
-                                    </td>
-                                    <td><?php echo date('d/m/Y', strtotime($toma['fecha_planificada'])); ?></td>
-                                    <td>
-                                        <?php echo $toma['total_productos']; ?> productos
-                                    </td>
-                                    <td>
-                                        <div class="progress" style="height: 20px;">
-                                            <?php 
-                                            $porcentaje = $toma['total_productos'] > 0 ? 
-                                                ($toma['productos_contados'] / $toma['total_productos']) * 100 : 0;
-                                            ?>
-                                            <div class="progress-bar bg-success" role="progressbar" 
-                                                 style="width: <?php echo $porcentaje; ?>%">
-                                                <?php echo round($porcentaje); ?>%
-                                            </div>
-                                        </div>
-                                    </td>
-                                    <td>
-                                        <?php if ($toma['estado'] == 'planificada' || $toma['estado'] == 'en_proceso'): ?>
-                                        <a href="inventario-fisico.php?view=mis_conteos&toma_id=<?php echo $toma['id']; ?>" 
-                                           class="btn btn-sm btn-primary">
-                                            <i class="fas fa-play-circle"></i>
-                                            <?php echo $toma['estado'] == 'planificada' ? 'Iniciar' : 'Continuar'; ?>
-                                        </a>
-                                        <?php endif; ?>
-                                    </td>
-                                </tr>
-                                <?php endforeach; ?>
-                            </tbody>
-                        </table>
-                    </div>
-                    <?php endif; ?>
-                </div>
-            </div>
-            
-        <?php elseif ($view == 'mis_conteos' && isset($data['detalles_pendientes'])): ?>
-            
-            <!-- Vista: Conteo de productos para empleados -->
-            <div class="card">
-                <div class="card-header">
-                    <h3><i class="fas fa-boxes"></i> Conteo de Productos</h3>
-                    <div class="card-actions">
-                        <a href="inventario-fisico.php?view=asignaciones" class="btn btn-outline btn-sm">
-                            <i class="fas fa-arrow-left"></i>
-                            Volver a Asignaciones
-                        </a>
-                    </div>
-                </div>
-                <div class="card-body">
-                    <?php if (empty($data['detalles_pendientes'])): ?>
-                    <div class="alert alert-success">
-                        <i class="fas fa-check-circle"></i>
-                        <strong>¡Excelente!</strong> Has contado todos los productos asignados.
-                    </div>
-                    <?php else: ?>
-                    <div class="alert alert-info">
-                        <i class="fas fa-info-circle"></i>
-                        <strong>Instrucciones:</strong> Cuenta físicamente cada producto y registra la cantidad encontrada.
-                        Si el producto no se encuentra, marca como "No Encontrado".
-                    </div>
-                    
-                    <div class="row">
-                        <?php foreach ($data['detalles_pendientes'] as $detalle): ?>
-                        <div class="col-md-6 mb-4">
-                            <div class="card" style="height: 100%;">
-                                <div class="card-body">
-                                    <h5 class="card-title"><?php echo htmlspecialchars($detalle['producto_nombre']); ?></h5>
-                                    <h6 class="card-subtitle mb-2 text-muted">Código: <?php echo htmlspecialchars($detalle['codigo']); ?></h6>
-                                    
-                                    <div class="mb-3">
-                                        <div><strong>Ubicación:</strong> <?php echo htmlspecialchars($detalle['ubicacion']); ?></div>
-                                        <div><strong>Almacén:</strong> <?php echo htmlspecialchars($detalle['almacen_nombre']); ?></div>
-                                        <div><strong>Sistema espera:</strong> <span class="badge bg-primary"><?php echo $detalle['cantidad_sistema']; ?> unidades</span></div>
-                                    </div>
-                                    
-                                    <div class="mt-3">
-                                        <form method="POST" action="" class="conteo-form">
+                                    <td><?= htmlspecialchars($d['codigo'] ?? ''); ?></td>
+                                    <td><?= htmlspecialchars($d['producto_nombre'] ?? ''); ?></td>
+                                    <td><?= htmlspecialchars($d['ubicacion'] ?? ''); ?></td>
+                                    <td><?= htmlspecialchars($d['cantidad_sistema'] ?? 0); ?></td>
+                                    <td style="min-width: 220px;">
+                                        <form method="post" class="row g-1 align-items-center">
                                             <input type="hidden" name="action" value="registrar_conteo">
-                                            <input type="hidden" name="detalle_id" value="<?php echo $detalle['id']; ?>">
-                                            
-                                            <div class="input-group mb-2">
-                                                <span class="input-group-text">Cantidad Contada:</span>
-                                                <input type="number" step="0.01" class="form-control" 
-                                                       name="cantidad_contada" placeholder="0" required>
+                                            <input type="hidden" name="detalle_id" value="<?= (int)$d['id']; ?>">
+
+                                            <div class="col-6">
+                                                <input type="number" step="0.01" min="0"
+                                                       name="cantidad_contada"
+                                                       class="form-control form-control-sm"
+                                                       required>
                                             </div>
-                                            
-                                            <div class="mb-2">
-                                                <textarea class="form-control form-control-sm" 
-                                                          name="observaciones" 
-                                                          placeholder="Observaciones (opcional)"></textarea>
-                                            </div>
-                                            
-                                            <div class="d-flex justify-content-between">
-                                                <button type="submit" class="btn btn-success btn-sm">
-                                                    <i class="fas fa-check"></i> Registrar Conteo
+                                            <div class="col-6">
+                                                <button type="submit" class="btn btn-primary btn-sm w-100">
+                                                    Guardar
                                                 </button>
-                                                
-                                                <a href="inventario-fisico.php?view=detalle_toma&toma_id=<?php echo $detalle['toma_id']; ?>&action_form=no_encontrado&detalle_id=<?php echo $detalle['id']; ?>" 
-                                                   class="btn btn-warning btn-sm">
-                                                    <i class="fas fa-times"></i> No Encontrado
-                                                </a>
+                                            </div>
+                                            <div class="col-12 mt-1">
+                                                <input type="text" name="observaciones"
+                                                       class="form-control form-control-sm"
+                                                       placeholder="Obs. (opcional)">
                                             </div>
                                         </form>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                        <?php endforeach; ?>
-                    </div>
-                    <?php endif; ?>
-                </div>
-            </div>
-            
-        <?php else: ?>
-            
-            <!-- Vista por defecto: Listado de tomas (para supervisores) -->
-            <div class="card">
-                <div class="card-header">
-                    <h3><i class="fas fa-clipboard-list"></i> Toma de Inventarios</h3>
-                    <div class="card-actions">
-                        <div class="btn-group">
-                            <button type="button" class="btn btn-outline btn-sm dropdown-toggle" data-bs-toggle="dropdown">
-                                <i class="fas fa-filter"></i> Filtros
-                            </button>
-                            <div class="dropdown-menu">
-                                <a class="dropdown-item" href="inventario-fisico.php?view=listado_tomas&estado=todas">Todas</a>
-                                <a class="dropdown-item" href="inventario-fisico.php?view=listado_tomas&estado=en_proceso">En Proceso</a>
-                                <a class="dropdown-item" href="inventario-fisico.php?view=listado_tomas&estado=completadas">Completadas</a>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-                <div class="card-body">
-                    <?php if (empty($data['tomas'])): ?>
-                    <div class="empty-state">
-                        <i class="fas fa-clipboard-check"></i>
-                        <h4>No hay tomas de inventario</h4>
-                        <p>No se han creado tomas de inventario aún.</p>
-                        <a href="inventario-fisico.php?view=nueva_toma" class="btn btn-primary">
-                            <i class="fas fa-plus-circle"></i>
-                            Crear Nueva Toma
-                        </a>
-                    </div>
-                    <?php else: ?>
-                    <div class="table-responsive">
-                        <table class="table table-striped">
-                            <thead>
-                                <tr>
-                                    <th>Código</th>
-                                    <th>Almacén</th>
-                                    <th>Responsable</th>
-                                    <th>Estado</th>
-                                    <th>Fecha Planificada</th>
-                                    <th>Progreso</th>
-                                    <th>Acciones</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                <?php foreach ($data['tomas'] as $toma): ?>
-                                <tr>
-                                    <td><?php echo htmlspecialchars($toma['codigo_toma']); ?></td>
-                                    <td><?php echo htmlspecialchars($toma['almacen_nombre']); ?></td>
-                                    <td><?php echo htmlspecialchars($toma['responsable_nombre']); ?></td>
-                                    <td>
-                                        <span class="status-badge <?php 
-                                            echo $toma['estado'] == 'ajustada' ? 'success' : 
-                                                 ($toma['estado'] == 'en_proceso' ? 'info' : 
-                                                 ($toma['estado'] == 'completada' ? 'success' : 'warning')); 
-                                        ?>">
-                                            <?php echo ucfirst(str_replace('_', ' ', $toma['estado'])); ?>
-                                        </span>
-                                    </td>
-                                    <td><?php echo date('d/m/Y', strtotime($toma['fecha_planificada'])); ?></td>
-                                    <td>
-                                        <div class="d-flex align-items-center">
-                                            <div class="progress flex-grow-1" style="height: 10px;">
-                                                <?php 
-                                                $porcentaje = $toma['total_productos'] > 0 ? 
-                                                    ($toma['productos_contados'] / $toma['total_productos']) * 100 : 0;
-                                                ?>
-                                                <div class="progress-bar bg-success" role="progressbar" 
-                                                     style="width: <?php echo $porcentaje; ?>%">
-                                                </div>
-                                            </div>
-                                            <small class="ms-2"><?php echo round($porcentaje); ?>%</small>
-                                        </div>
-                                    </td>
-                                    <td>
-                                        <a href="inventario-fisico.php?view=detalle_toma&toma_id=<?php echo $toma['id']; ?>" 
-                                           class="btn btn-sm btn-outline-primary">
-                                            <i class="fas fa-eye"></i>
-                                            Ver
-                                        </a>
                                     </td>
                                 </tr>
-                                <?php endforeach; ?>
+                            <?php endforeach; ?>
                             </tbody>
                         </table>
                     </div>
-                    <?php endif; ?>
-                </div>
+                <?php else: ?>
+                    <p class="mb-0 text-muted">
+                        No tienes productos pendientes por contar en esta toma.
+                    </p>
+                <?php endif; ?>
             </div>
-            
-        <?php endif; ?>
-    </div>
+        </div>
 
-    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
+    <?php else: ?>
 
-    <script>
-    // Cargar productos cuando se selecciona un almacén
-    document.getElementById('almacen_id')?.addEventListener('change', function() {
-        const almacenId = this.value;
-        const container = document.getElementById('productos-container');
-        
-        if (!almacenId) {
-            container.innerHTML = '<div class="text-center text-muted">Seleccione un almacén para cargar los productos</div>';
-            return;
-        }
-        
-        container.innerHTML = '<div class="text-center"><i class="fas fa-spinner fa-spin"></i> Cargando productos...</div>';
-        
-        // Simular carga de productos (en producción esto sería una llamada AJAX)
-        setTimeout(() => {
-            container.innerHTML = `
-                <div class="row">
-                    <div class="col-md-6 mb-2">
-                        <div class="form-check">
-                            <input class="form-check-input" type="checkbox" 
-                                   name="productos[]" value="1" id="producto_1" checked>
-                            <label class="form-check-label" for="producto_1">
-                                <strong>PROD-001</strong> - Producto Ejemplo 1
-                                <br>
-                                <small class="text-muted">
-                                    Stock: 100 unidades | Ubicación: Estante A1
-                                </small>
-                            </label>
-                        </div>
-                    </div>
-                    <div class="col-md-6 mb-2">
-                        <div class="form-check">
-                            <input class="form-check-input" type="checkbox" 
-                                   name="productos[]" value="2" id="producto_2" checked>
-                            <label class="form-check-label" for="producto_2">
-                                <strong>PROD-002</strong> - Producto Ejemplo 2
-                                <br>
-                                <small class="text-muted">
-                                    Stock: 50 unidades | Ubicación: Estante B2
-                                </small>
-                            </label>
-                        </div>
-                    </div>
-                </div>
-                <div class="alert alert-info mt-3">
-                    <i class="fas fa-info-circle"></i>
-                    En producción, esta lista se cargaría desde el servidor con los productos reales del almacén seleccionado.
-                </div>
-            `;
-        }, 1000);
-    });
+        <div class="alert alert-info">
+            No se pudo determinar la vista de inventario. Selecciona una opción del menú.
+        </div>
 
-    // Validar formularios de conteo
-    document.querySelectorAll('.conteo-form').forEach(form => {
-        form.addEventListener('submit', function(e) {
-            const cantidad = this.querySelector('[name="cantidad_contada"]').value;
-            
-            if (cantidad === '' || cantidad < 0) {
-                e.preventDefault();
-                alert('Por favor ingresa una cantidad válida');
-                return false;
-            }
-            
-            return true;
-        });
-    });
-
-    // Validar formulario de ajuste de inventario
-    document.getElementById('form-ajustar')?.addEventListener('submit', function(e) {
-        const checkboxes = this.querySelectorAll('input[name="ajustar[]"]:checked');
-        
-        if (checkboxes.length === 0) {
-            e.preventDefault();
-            alert('Por favor selecciona al menos una discrepancia para ajustar');
-            return false;
-        }
-        
-        return confirm('¿Estás seguro de que deseas ajustar el inventario? Esta acción actualizará los stocks del sistema.');
-    });
-
-    // Inicializar dropdowns de Bootstrap
-    document.addEventListener('DOMContentLoaded', function() {
-        // Inicializar tooltips si los hubiera
-        var tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'));
-        var tooltipList = tooltipTriggerList.map(function (tooltipTriggerEl) {
-            return new bootstrap.Tooltip(tooltipTriggerEl);
-        });
-        
-        // Auto-enfocar en el primer campo de formulario cuando hay un formulario activo
-        if (document.querySelector('.inline-form-container input')) {
-            document.querySelector('.inline-form-container input').focus();
-        }
-    });
-
-    // Scroll suave a formularios activos
-    <?php if ($action_form && $detalle_id_form): ?>
-    document.addEventListener('DOMContentLoaded', function() {
-        const formContainer = document.querySelector('.inline-form-container');
-        if (formContainer) {
-            formContainer.scrollIntoView({ behavior: 'smooth', block: 'start' });
-        }
-    });
     <?php endif; ?>
-    </script>
-</body>
-</html>
+
+</div>
+
+<?php require_once __DIR__ . '/includes/footer.php'; ?>

@@ -79,7 +79,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
             $new_id = $db->lastInsertId();
             add_flash('success', 'Toma de inventario creada correctamente.');
-            header('Location: inventario-fisico.php?view=detalle&toma_id=' . $new_id);
+            header('Location: inventario-fisico.php?view=detalle&toma_id=' . $new_id . '&tab=resumen');
             exit;
         }
 
@@ -101,7 +101,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
             if ($codigo_item === '' && $descripcion_item === '') {
                 add_flash('error', 'Debes ingresar al menos un código o una descripción del ítem.');
-                header('Location: inventario-fisico.php?view=detalle&toma_id=' . $toma_id);
+                header('Location: inventario-fisico.php?view=detalle&toma_id=' . $toma_id . '&tab=items');
                 exit;
             }
 
@@ -358,22 +358,42 @@ require_once __DIR__ . '/includes/header-logistica.php';
             <div class="col-lg-12">
 
                 <div class="d-flex justify-content-between align-items-center mb-3">
-                    <h3 class="mb-0">
-                        <i class="fas fa-clipboard-check"></i> Toma de Inventario Físico
-                    </h3>
+                    <div>
+                        <h3 class="mb-0">
+                            <i class="fas fa-clipboard-check"></i> Toma de Inventario Físico
+                        </h3>
+                        <div class="text-muted small">
+                            Control y seguimiento avanzado de inventarios físicos por almacén.
+                        </div>
+                    </div>
+                </div>
 
-                    <div class="btn-group">
-                        <a href="inventario-fisico.php?view=listado" class="btn btn-outline-primary btn-sm">
-                            Tomas
-                        </a>
-                        <a href="inventario-fisico.php?view=historial" class="btn btn-outline-secondary btn-sm">
-                            Historial
+                <!-- TABS PRINCIPALES (ESTILO 4 CON ICONOS) -->
+                <?php
+                // Para marcar activo: detalle y mis_tomas pertenecen al tab "Tomas"
+                $tab_main = 'listado';
+                if ($view === 'nueva')      $tab_main = 'nueva';
+                if ($view === 'historial')  $tab_main = 'historial';
+                if (in_array($view, ['listado', 'detalle', 'mis_tomas'])) {
+                    $tab_main = 'listado';
+                }
+                ?>
+                <div class="mb-3">
+                    <div class="btn-group" role="group" aria-label="Tabs inventario">
+                        <a href="inventario-fisico.php?view=listado"
+                           class="btn btn-sm <?php echo $tab_main === 'listado' ? 'btn-primary' : 'btn-outline-primary'; ?>">
+                            <i class="fas fa-clipboard-list me-1"></i> Tomas
                         </a>
                         <?php if (in_array($rol, ['super_admin','admin','supervisor'])): ?>
-                            <a href="inventario-fisico.php?view=nueva" class="btn btn-primary btn-sm">
-                                Nueva toma
+                            <a href="inventario-fisico.php?view=nueva"
+                               class="btn btn-sm <?php echo $tab_main === 'nueva' ? 'btn-success' : 'btn-outline-success'; ?>">
+                                <i class="fas fa-plus-circle me-1"></i> Nueva Toma
                             </a>
                         <?php endif; ?>
+                        <a href="inventario-fisico.php?view=historial"
+                           class="btn btn-sm <?php echo $tab_main === 'historial' ? 'btn-secondary' : 'btn-outline-secondary'; ?>">
+                            <i class="fas fa-folder-open me-1"></i> Historial
+                        </a>
                     </div>
                 </div>
 
@@ -397,15 +417,32 @@ require_once __DIR__ . '/includes/header-logistica.php';
                 // =========================================
                 // VISTA: LISTADO DE TOMAS
                 // =========================================
-                if ($view === 'listado'): ?>
+                if ($view === 'listado' || $view === 'mis_tomas'): ?>
 
                     <div class="card">
-                        <div class="card-header">
-                            <strong>Tomas de inventario</strong>
+                        <div class="card-header d-flex justify-content-between align-items-center">
+                            <strong>
+                                <?php if ($view === 'mis_tomas'): ?>
+                                    Mis tomas asignadas
+                                <?php else: ?>
+                                    Tomas de inventario
+                                <?php endif; ?>
+                            </strong>
+                            <?php if (in_array($rol, ['super_admin','admin','supervisor'])): ?>
+                                <a href="inventario-fisico.php?view=nueva" class="btn btn-sm btn-primary">
+                                    <i class="fas fa-plus-circle me-1"></i> Nueva toma
+                                </a>
+                            <?php endif; ?>
                         </div>
                         <div class="card-body table-responsive">
                             <?php if (!$tomas): ?>
-                                <p class="text-muted mb-0">No hay tomas registradas.</p>
+                                <p class="text-muted mb-0">
+                                    <?php if ($view === 'mis_tomas'): ?>
+                                        No tienes tomas asignadas.
+                                    <?php else: ?>
+                                        No hay tomas registradas.
+                                    <?php endif; ?>
+                                </p>
                             <?php else: ?>
                                 <table class="table table-sm table-hover align-middle">
                                     <thead>
@@ -413,7 +450,9 @@ require_once __DIR__ . '/includes/header-logistica.php';
                                             <th>ID</th>
                                             <th>Nombre</th>
                                             <th>Ubicación</th>
-                                            <th>Responsable</th>
+                                            <?php if ($view !== 'mis_tomas'): ?>
+                                                <th>Responsable</th>
+                                            <?php endif; ?>
                                             <th>Fecha prog.</th>
                                             <th>Estado</th>
                                             <th>Ítems</th>
@@ -434,7 +473,9 @@ require_once __DIR__ . '/includes/header-logistica.php';
                                             <td>#<?= (int)$t['id']; ?></td>
                                             <td><?= htmlspecialchars($t['nombre_toma']); ?></td>
                                             <td><?= htmlspecialchars($t['ubicacion']); ?></td>
-                                            <td><?= htmlspecialchars($t['responsable_nombre'] ?? ''); ?></td>
+                                            <?php if ($view !== 'mis_tomas'): ?>
+                                                <td><?= htmlspecialchars($t['responsable_nombre'] ?? ''); ?></td>
+                                            <?php endif; ?>
                                             <td><?= htmlspecialchars($t['fecha_programada'] ?? ''); ?></td>
                                             <td>
                                                 <span class="badge bg-<?= $badge; ?>">
@@ -445,7 +486,7 @@ require_once __DIR__ . '/includes/header-logistica.php';
                                             <td>
                                                 <a href="inventario-fisico.php?view=detalle&toma_id=<?= (int)$t['id']; ?>&tab=resumen"
                                                    class="btn btn-sm btn-outline-primary">
-                                                    Abrir
+                                                    <i class="fas fa-folder-open"></i> Abrir
                                                 </a>
                                             </td>
                                         </tr>
@@ -493,66 +534,16 @@ require_once __DIR__ . '/includes/header-logistica.php';
                                             <td><?= htmlspecialchars($t['fecha_cierre'] ?? ''); ?></td>
                                             <td>
                                                 <a href="inventario-fisico.php?view=detalle&toma_id=<?= (int)$t['id']; ?>&tab=resumen"
-                                                   class="btn btn-sm btn-outline-primary">
-                                                    Ver
+                                                   class="btn btn-sm btn-outline-primary mb-1">
+                                                    <i class="fas fa-eye"></i> Ver
                                                 </a>
                                                 <form method="post" class="d-inline">
                                                     <input type="hidden" name="action" value="exportar_toma">
                                                     <input type="hidden" name="toma_id" value="<?= (int)$t['id']; ?>">
                                                     <button class="btn btn-sm btn-outline-success">
-                                                        Exportar
+                                                        <i class="fas fa-file-excel"></i> Exportar
                                                     </button>
                                                 </form>
-                                            </td>
-                                        </tr>
-                                    <?php endforeach; ?>
-                                    </tbody>
-                                </table>
-                            <?php endif; ?>
-                        </div>
-                    </div>
-
-                <?php
-                // =========================================
-                // VISTA: MIS TOMAS (OPERADORES)
-                // =========================================
-                elseif ($view === 'mis_tomas'): ?>
-
-                    <div class="card">
-                        <div class="card-header">
-                            <strong>Mis tomas asignadas</strong>
-                        </div>
-                        <div class="card-body table-responsive">
-                            <?php if (!$tomas): ?>
-                                <p class="text-muted mb-0">No tienes tomas asignadas.</p>
-                            <?php else: ?>
-                                <table class="table table-sm table-hover align-middle">
-                                    <thead>
-                                        <tr>
-                                            <th>ID</th>
-                                            <th>Nombre</th>
-                                            <th>Ubicación</th>
-                                            <th>Estado</th>
-                                            <th></th>
-                                        </tr>
-                                    </thead>
-                                    <tbody>
-                                    <?php foreach ($tomas as $t): ?>
-                                        <?php $badge = $t['estado'] === 'abierta' ? 'success' : 'dark'; ?>
-                                        <tr>
-                                            <td>#<?= (int)$t['id']; ?></td>
-                                            <td><?= htmlspecialchars($t['nombre_toma']); ?></td>
-                                            <td><?= htmlspecialchars($t['ubicacion']); ?></td>
-                                            <td>
-                                                <span class="badge bg-<?= $badge; ?>">
-                                                    <?= htmlspecialchars($t['estado']); ?>
-                                                </span>
-                                            </td>
-                                            <td>
-                                                <a href="inventario-fisico.php?view=detalle&toma_id=<?= (int)$t['id']; ?>&tab=resumen"
-                                                   class="btn btn-sm btn-outline-primary">
-                                                    Abrir
-                                                </a>
                                             </td>
                                         </tr>
                                     <?php endforeach; ?>
@@ -658,7 +649,7 @@ require_once __DIR__ . '/includes/header-logistica.php';
                                         <input type="hidden" name="toma_id" value="<?= (int)$toma_actual['id']; ?>">
                                         <button class="btn btn-danger btn-sm"
                                                 onclick="return confirm('¿Cerrar esta toma? Ya no se podrán editar ítems.');">
-                                            Cerrar toma
+                                            <i class="fas fa-lock"></i> Cerrar toma
                                         </button>
                                     </form>
                                 <?php endif; ?>
@@ -667,7 +658,7 @@ require_once __DIR__ . '/includes/header-logistica.php';
                                     <input type="hidden" name="action" value="exportar_toma">
                                     <input type="hidden" name="toma_id" value="<?= (int)$toma_actual['id']; ?>">
                                     <button class="btn btn-outline-success btn-sm">
-                                        Exportar XLS
+                                        <i class="fas fa-file-excel"></i> Exportar XLS
                                     </button>
                                 </form>
                             </div>
@@ -765,8 +756,8 @@ require_once __DIR__ . '/includes/header-logistica.php';
                                 <?php endif; ?>
 
                                 <div class="mt-3 text-muted small">
-                                    * Las diferencias contra el sistema (faltantes/sobrantes) requieren integrar stock teórico
-                                    en otra tabla. Por ahora se muestra el avance de conteo sobre los ítems listados.
+                                    * Las diferencias contra el sistema (faltantes/sobrantes reales) requieren integrar stock teórico
+                                    en otra tabla (Kardex o stock). De momento se muestra el avance de conteo sobre los ítems listados.
                                 </div>
                             </div>
                         </div>
@@ -863,7 +854,7 @@ require_once __DIR__ . '/includes/header-logistica.php';
                                                         <button type="button"
                                                                 class="btn btn-sm btn-outline-secondary mb-1"
                                                                 onclick="mostrarEditarItem(<?= (int)$d['id']; ?>)">
-                                                            Editar
+                                                            <i class="fas fa-edit"></i> Editar
                                                         </button>
 
                                                         <form method="post" class="d-inline">
@@ -872,7 +863,7 @@ require_once __DIR__ . '/includes/header-logistica.php';
                                                             <input type="hidden" name="detalle_id" value="<?= (int)$d['id']; ?>">
                                                             <button class="btn btn-sm btn-outline-danger mb-1"
                                                                     onclick="return confirm('¿Eliminar este ítem?');">
-                                                                Eliminar
+                                                                <i class="fas fa-trash-alt"></i> Eliminar
                                                             </button>
                                                         </form>
                                                     </td>

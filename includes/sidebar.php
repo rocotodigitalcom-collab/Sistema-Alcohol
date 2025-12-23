@@ -28,7 +28,10 @@ $current_page = basename($_SERVER['PHP_SELF']);
                     <i class="fas fa-chevron-down submenu-toggle"></i>
                 </a>
                 <ul class="submenu">
-                    <!-- Realizar Pruebas -->
+                    <!-- === REALIZAR PRUEBAS === -->
+                    <li class="submenu-header">
+                        <span>Realizar Pruebas</span>
+                    </li>
                     <li class="submenu-item">
                         <a href="nueva-prueba.php" class="submenu-link <?php echo $current_page == 'nueva-prueba.php' ? 'active' : ''; ?>">
                             <i class="fas fa-plus-circle"></i>
@@ -41,8 +44,19 @@ $current_page = basename($_SERVER['PHP_SELF']);
                             <span class="submenu-text">Prueba Rápida</span>
                         </a>
                     </li>
+                    <li class="submenu-item">
+                        <a href="protocolo_completo.php" class="submenu-link <?php echo $current_page == 'protocolo_completo.php' ? 'active' : ''; ?>">
+                            <i class="fas fa-clipboard-list"></i>
+                            <span class="submenu-text">Protocolo Completo</span>
+                            <span class="badge badge-info">Widmark</span>
+                        </a>
+                    </li>
                     
-                    <!-- Historial -->
+                    <!-- === HISTORIAL === -->
+                    <li class="submenu-divider"></li>
+                    <li class="submenu-header">
+                        <span>Historial</span>
+                    </li>
                     <li class="submenu-item">
                         <a href="historial-pruebas.php" class="submenu-link <?php echo $current_page == 'historial-pruebas.php' ? 'active' : ''; ?>">
                             <i class="fas fa-history"></i>
@@ -62,7 +76,11 @@ $current_page = basename($_SERVER['PHP_SELF']);
                         </a>
                     </li>
                     
-                    <!-- Pendientes -->
+                    <!-- === PENDIENTES === -->
+                    <li class="submenu-divider"></li>
+                    <li class="submenu-header">
+                        <span>Pendientes</span>
+                    </li>
                     <li class="submenu-item">
                         <a href="pruebas-pendientes.php" class="submenu-link <?php echo $current_page == 'pruebas-pendientes.php' ? 'active' : ''; ?>">
                             <i class="fas fa-clock"></i>
@@ -158,7 +176,7 @@ $current_page = basename($_SERVER['PHP_SELF']);
             <!-- ===== ALCOHOLÍMETROS ===== -->
             <li class="menu-item has-submenu">
                 <a href="#" class="menu-link">
-                    <i class="fas fa-tachometer-alt"></i>
+                    <i class="fas fa-flask"></i>
                     <span class="menu-text">Alcoholímetros</span>
                     <i class="fas fa-chevron-down submenu-toggle"></i>
                 </a>
@@ -166,7 +184,7 @@ $current_page = basename($_SERVER['PHP_SELF']);
                     <li class="submenu-item">
                         <a href="alcoholimetros.php" class="submenu-link <?php echo $current_page == 'alcoholimetros.php' ? 'active' : ''; ?>">
                             <i class="fas fa-list"></i>
-                            <span class="submenu-text">Inventario</span>
+                            <span class="submenu-text">Lista de Alcoholímetros</span>
                         </a>
                     </li>
                     <li class="submenu-item">
@@ -176,21 +194,21 @@ $current_page = basename($_SERVER['PHP_SELF']);
                         </a>
                     </li>
                     <li class="submenu-item">
+                        <a href="estados-alcoholimetros.php" class="submenu-link <?php echo $current_page == 'estados-alcoholimetros.php' ? 'active' : ''; ?>">
+                            <i class="fas fa-signal"></i>
+                            <span class="submenu-text">Estado de Dispositivos</span>
+                        </a>
+                    </li>
+                    <li class="submenu-item">
                         <a href="calibraciones.php" class="submenu-link <?php echo $current_page == 'calibraciones.php' ? 'active' : ''; ?>">
-                            <i class="fas fa-wrench"></i>
+                            <i class="fas fa-sliders-h"></i>
                             <span class="submenu-text">Calibraciones</span>
                         </a>
                     </li>
                     <li class="submenu-item">
                         <a href="proximas-calibraciones.php" class="submenu-link <?php echo $current_page == 'proximas-calibraciones.php' ? 'active' : ''; ?>">
-                            <i class="fas fa-calendar-alt"></i>
+                            <i class="fas fa-calendar-check"></i>
                             <span class="submenu-text">Próximas Calibraciones</span>
-                        </a>
-                    </li>
-                    <li class="submenu-item">
-                        <a href="estados-alcoholimetros.php" class="submenu-link <?php echo $current_page == 'estados-alcoholimetros.php' ? 'active' : ''; ?>">
-                            <i class="fas fa-info-circle"></i>
-                            <span class="submenu-text">Estados y Mantenimiento</span>
                         </a>
                     </li>
                     <li class="submenu-item">
@@ -202,24 +220,24 @@ $current_page = basename($_SERVER['PHP_SELF']);
                 </ul>
             </li>
 
-            <!-- ===== REPORTES Y ANÁLISIS ===== -->
+            <!-- ===== REPORTES Y ESTADÍSTICAS ===== -->
             <li class="menu-item has-submenu">
                 <a href="#" class="menu-link">
-                    <i class="fas fa-chart-bar"></i>
-                    <span class="menu-text">Reportes y Análisis</span>
+                    <i class="fas fa-chart-line"></i>
+                    <span class="menu-text">Reportes</span>
                     <i class="fas fa-chevron-down submenu-toggle"></i>
                 </a>
                 <ul class="submenu">
-                    <!-- Reportes de Pruebas -->
+                    <!-- Reportes Operativos -->
                     <li class="submenu-item">
                         <a href="reportes-pruebas.php" class="submenu-link <?php echo $current_page == 'reportes-pruebas.php' ? 'active' : ''; ?>">
-                            <i class="fas fa-file-contract"></i>
-                            <span class="submenu-text">Reportes de Pruebas</span>
+                            <i class="fas fa-file-alt"></i>
+                            <span class="submenu-text">Por Pruebas</span>
                         </a>
                     </li>
                     <li class="submenu-item">
                         <a href="reportes-fecha.php" class="submenu-link <?php echo $current_page == 'reportes-fecha.php' ? 'active' : ''; ?>">
-                            <i class="fas fa-calendar"></i>
+                            <i class="fas fa-calendar-alt"></i>
                             <span class="submenu-text">Por Fecha</span>
                         </a>
                     </li>
@@ -357,6 +375,49 @@ $current_page = basename($_SERVER['PHP_SELF']);
         </ul>
     </div>
 </nav>
+
+<style>
+/* Estilos adicionales para mejorar la organización visual */
+.submenu-header {
+    padding: 8px 20px 8px 45px;
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    color: #6c757d;
+    letter-spacing: 0.5px;
+    margin-top: 8px;
+}
+
+.submenu-divider {
+    height: 1px;
+    background: rgba(0, 0, 0, 0.1);
+    margin: 8px 20px;
+}
+
+.badge {
+    display: inline-block;
+    padding: 2px 6px;
+    font-size: 10px;
+    font-weight: 600;
+    border-radius: 10px;
+    margin-left: 8px;
+}
+
+.badge-warning {
+    background: #ffc107;
+    color: #000;
+}
+
+.badge-info {
+    background: #17a2b8;
+    color: #fff;
+}
+
+.badge-danger {
+    background: #dc3545;
+    color: #fff;
+}
+</style>
 
 <script>
 // Toggle submenús

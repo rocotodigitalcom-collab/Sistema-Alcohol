@@ -1,0 +1,149 @@
+2025-12-08 20:59:19 => === CARGANDO inventario-fisico.php ===
+2025-12-08 20:59:19 => USER_ID=2 CLIENTE_ID=1 ROL=admin
+2025-12-08 20:59:19 => VIEW=nueva TOMA_ID=0 TAB=resumen
+2025-12-08 20:59:22 => === CARGANDO inventario-fisico.php ===
+2025-12-08 20:59:22 => USER_ID=2 CLIENTE_ID=1 ROL=admin
+2025-12-08 20:59:22 => VIEW=historial TOMA_ID=0 TAB=resumen
+2025-12-08 20:59:22 => TOMAS EN LISTADO=0
+2025-12-08 20:59:24 => === CARGANDO inventario-fisico.php ===
+2025-12-08 20:59:24 => USER_ID=2 CLIENTE_ID=1 ROL=admin
+2025-12-08 20:59:24 => VIEW=listado TOMA_ID=0 TAB=resumen
+2025-12-08 20:59:24 => TOMAS EN LISTADO=1
+2025-12-08 20:59:27 => === CARGANDO inventario-fisico.php ===
+2025-12-08 20:59:27 => USER_ID=2 CLIENTE_ID=1 ROL=admin
+2025-12-08 20:59:27 => VIEW=detalle TOMA_ID=1 TAB=resumen
+2025-12-08 20:59:27 => TOMA_ACTUAL={"id":"1","cliente_id":"1","nombre_toma":"Inicio","fecha_programada":"2025-12-08","ubicacion":"Local","comentarios":"dede","estado":"abierta","responsable_id":"2","fecha_creacion":"2025-12-08 18:54:16","fecha_cierre":null,"usuario_cierre":null,"responsable_nombre":"Admin"}
+2025-12-08 20:59:27 => DETALLES=0
+2025-12-08 20:59:31 => === CARGANDO inventario-fisico.php ===
+2025-12-08 20:59:31 => USER_ID=2 CLIENTE_ID=1 ROL=admin
+2025-12-08 20:59:31 => VIEW=detalle TOMA_ID=1 TAB=items
+2025-12-08 20:59:31 => TOMA_ACTUAL={"id":"1","cliente_id":"1","nombre_toma":"Inicio","fecha_programada":"2025-12-08","ubicacion":"Local","comentarios":"dede","estado":"abierta","responsable_id":"2","fecha_creacion":"2025-12-08 18:54:16","fecha_cierre":null,"usuario_cierre":null,"responsable_nombre":"Admin"}
+2025-12-08 20:59:31 => DETALLES=0
+2025-12-08 20:59:35 => === CARGANDO inventario-fisico.php ===
+2025-12-08 20:59:35 => USER_ID=2 CLIENTE_ID=1 ROL=admin
+2025-12-08 20:59:35 => VIEW=detalle TOMA_ID=1 TAB=diferencias
+2025-12-08 20:59:35 => TOMA_ACTUAL={"id":"1","cliente_id":"1","nombre_toma":"Inicio","fecha_programada":"2025-12-08","ubicacion":"Local","comentarios":"dede","estado":"abierta","responsable_id":"2","fecha_creacion":"2025-12-08 18:54:16","fecha_cierre":null,"usuario_cierre":null,"responsable_nombre":"Admin"}
+2025-12-08 20:59:35 => DETALLES=0
+2025-12-08 20:59:38 => === CARGANDO inventario-fisico.php ===
+2025-12-08 20:59:38 => USER_ID=2 CLIENTE_ID=1 ROL=admin
+2025-12-08 20:59:38 => VIEW=detalle TOMA_ID=1 TAB=resumen
+2025-12-08 20:59:38 => TOMA_ACTUAL={"id":"1","cliente_id":"1","nombre_toma":"Inicio","fecha_programada":"2025-12-08","ubicacion":"Local","comentarios":"dede","estado":"abierta","responsable_id":"2","fecha_creacion":"2025-12-08 18:54:16","fecha_cierre":null,"usuario_cierre":null,"responsable_nombre":"Admin"}
+2025-12-08 20:59:38 => DETALLES=0
+2025-12-08 20:59:39 => === CARGANDO inventario-fisico.php ===
+2025-12-08 20:59:39 => USER_ID=2 CLIENTE_ID=1 ROL=admin
+2025-12-08 20:59:39 => VIEW=detalle TOMA_ID=1 TAB=items
+2025-12-08 20:59:39 => TOMA_ACTUAL={"id":"1","cliente_id":"1","nombre_toma":"Inicio","fecha_programada":"2025-12-08","ubicacion":"Local","comentarios":"dede","estado":"abierta","responsable_id":"2","fecha_creacion":"2025-12-08 18:54:16","fecha_cierre":null,"usuario_cierre":null,"responsable_nombre":"Admin"}
+2025-12-08 20:59:39 => DETALLES=0
+2025-12-08 21:01:03 => === CARGANDO inventario-fisico.php ===
+2025-12-08 21:01:03 => USER_ID=2 CLIENTE_ID=1 ROL=admin
+2025-12-08 21:01:03 => VIEW=mis_tomas TOMA_ID=0 TAB=resumen
+2025-12-08 21:01:03 => MIS TOMAS=1
+2025-12-08 21:01:06 => === CARGANDO inventario-fisico.php ===
+2025-12-08 21:01:06 => USER_ID=2 CLIENTE_ID=1 ROL=admin
+2025-12-08 21:01:06 => VIEW=detalle TOMA_ID=1 TAB=resumen
+2025-12-08 21:01:06 => TOMA_ACTUAL={"id":"1","cliente_id":"1","nombre_toma":"Inicio","fecha_programada":"2025-12-08","ubicacion":"Local","comentarios":"dede","estado":"abierta","responsable_id":"2","fecha_creacion":"2025-12-08 18:54:16","fecha_cierre":null,"usuario_cierre":null,"responsable_nombre":"Admin"}
+2025-12-08 21:01:06 => DETALLES=0
+2025-12-08 21:01:10 => === CARGANDO inventario-fisico.php ===
+2025-12-08 21:01:10 => USER_ID=2 CLIENTE_ID=1 ROL=admin
+2025-12-08 21:01:10 => VIEW=detalle TOMA_ID=1 TAB=diferencias
+2025-12-08 21:01:10 => TOMA_ACTUAL={"id":"1","cliente_id":"1","nombre_toma":"Inicio","fecha_programada":"2025-12-08","ubicacion":"Local","comentarios":"dede","estado":"abierta","responsable_id":"2","fecha_creacion":"2025-12-08 18:54:16","fecha_cierre":null,"usuario_cierre":null,"responsable_nombre":"Admin"}
+2025-12-08 21:01:10 => DETALLES=0
+2025-12-08 21:18:47 => === CARGANDO inventario-fisico.php ===
+2025-12-08 21:18:47 => USER_ID=2 CLIENTE_ID=1 ROL=admin
+2025-12-08 21:18:47 => VIEW=detalle TOMA_ID=1 TAB=diferencias
+2025-12-08 21:18:49 => === CARGANDO inventario-fisico.php ===
+2025-12-08 21:18:49 => USER_ID=2 CLIENTE_ID=1 ROL=admin
+2025-12-08 21:18:49 => VIEW=nueva TOMA_ID=0 TAB=resumen
+2025-12-08 21:18:51 => === CARGANDO inventario-fisico.php ===
+2025-12-08 21:18:51 => USER_ID=2 CLIENTE_ID=1 ROL=admin
+2025-12-08 21:18:51 => VIEW=mis_tomas TOMA_ID=0 TAB=resumen
+2025-12-08 21:18:52 => === CARGANDO inventario-fisico.php ===
+2025-12-08 21:18:52 => USER_ID=2 CLIENTE_ID=1 ROL=admin
+2025-12-08 21:18:52 => VIEW=historial TOMA_ID=0 TAB=resumen
+2025-12-08 21:18:55 => === CARGANDO inventario-fisico.php ===
+2025-12-08 21:18:55 => USER_ID=2 CLIENTE_ID=1 ROL=admin
+2025-12-08 21:18:55 => VIEW=listado TOMA_ID=0 TAB=resumen
+2025-12-08 21:18:56 => === CARGANDO inventario-fisico.php ===
+2025-12-08 21:18:56 => USER_ID=2 CLIENTE_ID=1 ROL=admin
+2025-12-08 21:18:56 => VIEW=nueva TOMA_ID=0 TAB=resumen
+2025-12-08 21:18:59 => === CARGANDO inventario-fisico.php ===
+2025-12-08 21:18:59 => USER_ID=2 CLIENTE_ID=1 ROL=admin
+2025-12-08 21:18:59 => VIEW=listado TOMA_ID=0 TAB=resumen
+2025-12-08 21:19:00 => === CARGANDO inventario-fisico.php ===
+2025-12-08 21:19:00 => USER_ID=2 CLIENTE_ID=1 ROL=admin
+2025-12-08 21:19:00 => VIEW=mis_tomas TOMA_ID=0 TAB=resumen
+2025-12-08 21:19:02 => === CARGANDO inventario-fisico.php ===
+2025-12-08 21:19:02 => USER_ID=2 CLIENTE_ID=1 ROL=admin
+2025-12-08 21:19:02 => VIEW=historial TOMA_ID=0 TAB=resumen
+2025-12-08 21:19:03 => === CARGANDO inventario-fisico.php ===
+2025-12-08 21:19:03 => USER_ID=2 CLIENTE_ID=1 ROL=admin
+2025-12-08 21:19:03 => VIEW=listado TOMA_ID=0 TAB=resumen
+2025-12-08 21:19:07 => === CARGANDO inventario-fisico.php ===
+2025-12-08 21:19:07 => USER_ID=2 CLIENTE_ID=1 ROL=admin
+2025-12-08 21:19:07 => VIEW=listado TOMA_ID=0 TAB=resumen
+2025-12-08 21:19:09 => === CARGANDO inventario-fisico.php ===
+2025-12-08 21:19:09 => USER_ID=2 CLIENTE_ID=1 ROL=admin
+2025-12-08 21:19:09 => VIEW=nueva TOMA_ID=0 TAB=resumen
+2025-12-08 21:19:12 => === CARGANDO inventario-fisico.php ===
+2025-12-08 21:19:12 => USER_ID=2 CLIENTE_ID=1 ROL=admin
+2025-12-08 21:19:12 => VIEW=mis_tomas TOMA_ID=0 TAB=resumen
+2025-12-08 21:19:17 => === CARGANDO inventario-fisico.php ===
+2025-12-08 21:19:17 => USER_ID=2 CLIENTE_ID=1 ROL=admin
+2025-12-08 21:19:17 => VIEW=historial TOMA_ID=0 TAB=resumen
+2025-12-08 21:19:19 => === CARGANDO inventario-fisico.php ===
+2025-12-08 21:19:19 => USER_ID=2 CLIENTE_ID=1 ROL=admin
+2025-12-08 21:19:19 => VIEW=listado TOMA_ID=0 TAB=resumen
+2025-12-08 21:19:21 => === CARGANDO inventario-fisico.php ===
+2025-12-08 21:19:21 => USER_ID=2 CLIENTE_ID=1 ROL=admin
+2025-12-08 21:19:21 => VIEW=nueva TOMA_ID=0 TAB=resumen
+2025-12-08 21:25:57 => === CARGANDO inventario-fisico.php ===
+2025-12-08 21:25:57 => USER_ID=2 CLIENTE_ID=1 ROL=admin
+2025-12-08 21:25:57 => VIEW=nueva TOMA_ID=0 TAB=resumen
+2025-12-08 21:26:01 => === CARGANDO inventario-fisico.php ===
+2025-12-08 21:26:01 => USER_ID=2 CLIENTE_ID=1 ROL=admin
+2025-12-08 21:26:01 => VIEW=nuevatest-inventario.php TOMA_ID=0 TAB=resumen
+2025-12-08 21:28:21 => === CARGANDO inventario-fisico.php ===
+2025-12-08 21:28:21 => USER_ID=2 CLIENTE_ID=1 ROL=admin
+2025-12-08 21:28:21 => VIEW=listado TOMA_ID=0 TAB=resumen
+2025-12-08 21:28:30 => === CARGANDO inventario-fisico.php ===
+2025-12-08 21:28:30 => USER_ID=2 CLIENTE_ID=1 ROL=admin
+2025-12-08 21:28:30 => VIEW=nueva TOMA_ID=0 TAB=resumen
+2025-12-08 21:28:31 => === CARGANDO inventario-fisico.php ===
+2025-12-08 21:28:31 => USER_ID=2 CLIENTE_ID=1 ROL=admin
+2025-12-08 21:28:31 => VIEW=mis_tomas TOMA_ID=0 TAB=resumen
+2025-12-08 21:28:33 => === CARGANDO inventario-fisico.php ===
+2025-12-08 21:28:33 => USER_ID=2 CLIENTE_ID=1 ROL=admin
+2025-12-08 21:28:33 => VIEW=historial TOMA_ID=0 TAB=resumen
+2025-12-08 21:28:35 => === CARGANDO inventario-fisico.php ===
+2025-12-08 21:28:35 => USER_ID=2 CLIENTE_ID=1 ROL=admin
+2025-12-08 21:28:35 => VIEW=listado TOMA_ID=0 TAB=resumen
+2025-12-08 21:28:36 => === CARGANDO inventario-fisico.php ===
+2025-12-08 21:28:36 => USER_ID=2 CLIENTE_ID=1 ROL=admin
+2025-12-08 21:28:36 => VIEW=nueva TOMA_ID=0 TAB=resumen
+2025-12-08 21:28:40 => === CARGANDO inventario-fisico.php ===
+2025-12-08 21:28:40 => USER_ID=2 CLIENTE_ID=1 ROL=admin
+2025-12-08 21:28:40 => VIEW=mis_tomas TOMA_ID=0 TAB=resumen
+2025-12-08 21:30:07 => === CARGANDO inventario-fisico.php ===
+2025-12-08 21:30:07 => USER_ID=2 CLIENTE_ID=1 ROL=admin
+2025-12-08 21:30:07 => VIEW=nueva TOMA_ID=0 TAB=resumen
+2025-12-08 21:30:09 => === CARGANDO inventario-fisico.php ===
+2025-12-08 21:30:09 => USER_ID=2 CLIENTE_ID=1 ROL=admin
+2025-12-08 21:30:09 => VIEW=listado TOMA_ID=0 TAB=resumen
+2025-12-08 21:30:11 => === CARGANDO inventario-fisico.php ===
+2025-12-08 21:30:11 => USER_ID=2 CLIENTE_ID=1 ROL=admin
+2025-12-08 21:30:11 => VIEW=mis_tomas TOMA_ID=0 TAB=resumen
+2025-12-08 21:30:12 => === CARGANDO inventario-fisico.php ===
+2025-12-08 21:30:12 => USER_ID=2 CLIENTE_ID=1 ROL=admin
+2025-12-08 21:30:12 => VIEW=historial TOMA_ID=0 TAB=resumen
+2025-12-08 21:30:14 => === CARGANDO inventario-fisico.php ===
+2025-12-08 21:30:14 => USER_ID=2 CLIENTE_ID=1 ROL=admin
+2025-12-08 21:30:14 => VIEW=nueva TOMA_ID=0 TAB=resumen
+2025-12-08 21:30:15 => === CARGANDO inventario-fisico.php ===
+2025-12-08 21:30:15 => USER_ID=2 CLIENTE_ID=1 ROL=admin
+2025-12-08 21:30:15 => VIEW=listado TOMA_ID=0 TAB=resumen
+2025-12-08 21:35:22 => === CARGANDO inventario-fisico.php ===
+2025-12-08 21:35:22 => USER_ID=2 CLIENTE_ID=1 ROL=admin
+2025-12-08 21:35:22 => VIEW=detalle TOMA_ID=1 TAB=resumen
+2025-12-08 21:35:29 => === CARGANDO inventario-fisico.php ===
+2025-12-08 21:35:29 => USER_ID=2 CLIENTE_ID=1 ROL=admin
+2025-12-08 21:35:29 => VIEW=listado TOMA_ID=0 TAB=resumen
